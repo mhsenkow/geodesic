@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-06-18
+
+### Added
+
+- **Hub style variants** for timber: **Sharp** (crisp prismatic tubes) vs **Organic** (tapered flare + blended core)
+- Inspector sliders for **socket wall thickness** and **entry bevel** (live preview)
+- Shed 3m Timber (Organic) preset
+
+### Changed
+
+- Timber sockets rebuilt as **single watertight tube meshes** per strut (no overlapping wall panels + box core)
+- Sockets meet at center via natural overlap instead of a bolted-on sphere/cylinder junction
+- Flare slider only appears for organic timber or round tube modes
+
 ## [1.1.0] - 2026-06-18
 
 ### Added

@@ -141,19 +141,37 @@ export function bindUi(app: GeodesicApp): void {
     'hub-detail': 'detail',
   };
 
-  (['hub-body', 'hub-chamfer', 'hub-detail'] as const).forEach((id) => {
+  (['hub-body', 'hub-chamfer', 'hub-detail', 'hub-wall'] as const).forEach((id) => {
     document.getElementById(id)?.addEventListener('input', (e) => {
       const val = +(e.target as HTMLInputElement).value;
-      app.settings[refinementMap[id]] = val;
-      const valEl = document.getElementById(id + '-val');
-      if (valEl) {
-        valEl.textContent =
-          id === 'hub-body' ? val.toFixed(1) + 'x' : id === 'hub-detail' ? String(val) : val.toFixed(1);
+      if (id === 'hub-wall') {
+        app.settings.wall = val;
+        document.getElementById('hub-wall-val')!.textContent = val.toFixed(1);
+        void app.buildDome(false);
+      } else {
+        app.settings[refinementMap[id]] = val;
+        const valEl = document.getElementById(id + '-val');
+        if (valEl) {
+          valEl.textContent =
+            id === 'hub-body' ? val.toFixed(1) + 'x' : id === 'hub-detail' ? String(val) : val.toFixed(1);
+        }
+        app.updateInspector();
       }
-      app.updateInspector();
       app.persist();
     });
   });
+
+  document.querySelectorAll('input[name="hubStyle"]').forEach((r) =>
+    r.addEventListener('change', (e) => {
+      app.settings.hubStyle = (e.target as HTMLInputElement).value as 'sharp' | 'organic';
+      if (app.settings.hubStyle === 'organic' && app.settings.bodyScale < 1.15) {
+        app.settings.bodyScale = 1.4;
+      }
+      app.syncFormFromSettings();
+      void app.buildDome(false);
+      app.persist();
+    })
+  );
 
   document.getElementById('hub-wireframe')?.addEventListener('change', (e) => {
     app.settings.hubWire = (e.target as HTMLInputElement).checked;

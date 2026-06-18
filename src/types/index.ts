@@ -1,4 +1,5 @@
 export type MaterialType = 'round' | 'rect';
+export type HubStyle = 'sharp' | 'organic';
 
 export interface Vec3 {
   0: number;
@@ -64,6 +65,7 @@ export interface AppSettings {
   materialStockId: string;
   screwHoles: boolean;
   screwDia: number;
+  hubStyle: HubStyle;
 }
 
 export interface HubParams {
@@ -82,6 +84,7 @@ export interface HubParams {
   printUpOverride?: [number, number, number] | null;
   screwHoles?: boolean;
   screwDia?: number;
+  hubStyle?: HubStyle;
 }
 
 export interface StlValidationResult {
@@ -128,6 +131,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   materialStockId: 'pvc-0.75',
   screwHoles: true,
   screwDia: 4.2,
+  hubStyle: 'sharp',
 };
 
 export const DOME_RADIUS = 5;

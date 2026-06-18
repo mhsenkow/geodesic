@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { DomeData, HubParams } from '../types';
 import { DOME_RADIUS, EPS } from '../types';
-import { createCleanTimberSocket, createTimberNodeCore } from './timber-socket';
+import { createTimberSocketGeometry } from './timber-socket';
 
 export function smoothStep01(t: number): number {
   const x = Math.max(0, Math.min(1, t));
@@ -18,7 +18,7 @@ export function prepGeo(g: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 
 function createTimberSocketGeometries(p: HubParams): THREE.BufferGeometry[] {
-  return createCleanTimberSocket(p);
+  return [createTimberSocketGeometry(p)];
 }
 
 function buildOrganicSocketProfile(
@@ -182,13 +182,10 @@ export function createHub(
   } else {
     for (const dir of dirs) {
       const q = new THREE.Quaternion().setFromUnitVectors(up, dir);
-      for (const part of createTimberSocketGeometries(p)) {
-        part.applyQuaternion(q);
-        geos.push(prepGeo(part));
-      }
+      const socket = createTimberSocketGeometry(p);
+      socket.applyQuaternion(q);
+      geos.push(prepGeo(socket));
     }
-
-    geos.push(createTimberNodeCore(p));
   }
 
   if (!geos.length) return null;

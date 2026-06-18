@@ -66,6 +66,7 @@ export class GeodesicApp {
       printUpOverride: this.settings.printUpOverride,
       screwHoles: this.settings.screwHoles,
       screwDia: this.settings.screwDia,
+      hubStyle: this.settings.hubStyle,
     };
   }
 
@@ -298,6 +299,9 @@ export class GeodesicApp {
     setVal('material-stock', s.materialStockId);
     setVal('screw-holes', s.screwHoles);
     setVal('screw-dia', s.screwDia);
+    (document.getElementById('style-sharp') as HTMLInputElement).checked = s.hubStyle === 'sharp';
+    (document.getElementById('style-organic') as HTMLInputElement).checked = s.hubStyle === 'organic';
+    setVal('hub-wall', s.wall);
 
     const profile = getMaterialProfile(s.materialStockId);
     const note = document.getElementById('material-stock-note');
@@ -314,8 +318,14 @@ export class GeodesicApp {
     document.getElementById('hub-body-val')!.textContent = s.bodyScale.toFixed(1) + 'x';
     document.getElementById('hub-chamfer-val')!.textContent = s.chamfer.toFixed(1);
     document.getElementById('hub-detail-val')!.textContent = String(s.detail);
+    document.getElementById('hub-wall-val')!.textContent = s.wall.toFixed(1);
 
     const isRound = s.matType === 'round';
+    const showFlare = isRound || s.hubStyle === 'organic';
+    const flareGroup = document.getElementById('flare-group');
+    if (flareGroup) flareGroup.style.display = showFlare ? 'flex' : 'none';
+    const styleGroup = document.getElementById('hub-style-group');
+    if (styleGroup) styleGroup.style.display = isRound ? 'none' : 'flex';
     (document.getElementById('mat-round') as HTMLInputElement).checked = isRound;
     (document.getElementById('mat-rect') as HTMLInputElement).checked = !isRound;
     document.querySelectorAll('.round-only').forEach((el) => {
@@ -325,7 +335,7 @@ export class GeodesicApp {
       (el as HTMLElement).style.display = isRound ? 'none' : 'flex';
     });
     document.querySelectorAll('.timber-hide-flare').forEach((el) => {
-      (el as HTMLElement).style.display = isRound ? 'flex' : 'none';
+      (el as HTMLElement).style.display = showFlare ? 'flex' : 'none';
     });
 
     const presetSelect = document.getElementById('preset-select') as HTMLSelectElement | null;
