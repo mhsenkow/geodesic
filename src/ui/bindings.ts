@@ -2,6 +2,7 @@ import type { GeodesicApp } from './app';
 import type { AppSettings } from '../types';
 import { PRESETS } from '../presets';
 import { clearSettings } from '../storage/settings';
+import { getMaterialsByCategory, CATEGORY_LABELS } from '../materials/catalog';
 
 type NumericSettingKey = {
   [K in keyof AppSettings]: AppSettings[K] extends number ? K : never;
@@ -27,6 +28,38 @@ export function bindUi(app: GeodesicApp): void {
       if (id) app.applyPreset(id);
     });
   }
+
+  const stockSelect = document.getElementById('material-stock') as HTMLSelectElement;
+  if (stockSelect) {
+    for (const [cat, items] of getMaterialsByCategory()) {
+      const group = document.createElement('optgroup');
+      group.label = CATEGORY_LABELS[cat];
+      for (const m of items) {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = `${m.name} (${m.actualLabel})`;
+        group.appendChild(opt);
+      }
+      stockSelect.appendChild(group);
+    }
+    stockSelect.addEventListener('change', (e) => {
+      app.applyMaterialStock((e.target as HTMLSelectElement).value);
+    });
+  }
+
+  document.getElementById('screw-holes')?.addEventListener('change', (e) => {
+    app.settings.screwHoles = (e.target as HTMLInputElement).checked;
+    app.updateInspector();
+    void app.buildDome(false);
+    app.persist();
+  });
+
+  document.getElementById('screw-dia')?.addEventListener('change', (e) => {
+    app.settings.screwDia = +(e.target as HTMLSelectElement).value;
+    app.updateInspector();
+    void app.buildDome(false);
+    app.persist();
+  });
 
   const binds: [string, NumericSettingKey, boolean][] = [
     ['diameter', 'diam', true],

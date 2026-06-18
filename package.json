@@ -1,6 +1,6 @@
 {
   "name": "geodesic",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Generate organic, 3D-printable geodesic dome connector hubs",
   "license": "MIT",
   "type": "module",

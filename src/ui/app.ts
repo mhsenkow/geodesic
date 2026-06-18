@@ -12,6 +12,7 @@ import { exportHubStl, downloadBlob, downloadText } from '../geometry/export';
 import { generateHubMapSvg } from '../guides/hub-map';
 import { loadSettings, saveSettings } from '../storage/settings';
 import { getPreset } from '../presets';
+import { getMaterialProfile, applyMaterialProfile } from '../materials/catalog';
 import { MainScene } from '../scene/main-scene';
 import { InspectorScene, computePairAngles } from '../scene/inspector-scene';
 import { showToast } from './toast';
@@ -63,6 +64,8 @@ export class GeodesicApp {
       printFoot: this.settings.printFoot,
       footMargin: this.settings.footMargin,
       printUpOverride: this.settings.printUpOverride,
+      screwHoles: this.settings.screwHoles,
+      screwDia: this.settings.screwDia,
     };
   }
 
@@ -212,9 +215,25 @@ export class GeodesicApp {
     const preset = getPreset(presetId);
     if (!preset) return;
     this.settings = { ...this.settings, ...preset.settings, presetId };
+    if (preset.settings.materialStockId) {
+      const profile = getMaterialProfile(preset.settings.materialStockId);
+      if (profile) Object.assign(this.settings, applyMaterialProfile(profile));
+      this.settings = { ...this.settings, ...preset.settings, presetId };
+    }
     this.syncFormFromSettings();
     void this.buildDome();
     showToast(`Applied preset: ${preset.name}`, 'success');
+  }
+
+  applyMaterialStock(stockId: string, rebuild = true): void {
+    const profile = getMaterialProfile(stockId);
+    if (!profile) return;
+    Object.assign(this.settings, applyMaterialProfile(profile));
+    if (profile.matType === 'rect') {
+      this.settings.bodyScale = Math.min(this.settings.bodyScale, 1.05);
+    }
+    this.syncFormFromSettings();
+    if (rebuild) void this.buildDome(false);
   }
 
   updateStats(): void {
@@ -276,6 +295,15 @@ export class GeodesicApp {
     setVal('print-up-y', s.printUpOverride?.[1] ?? 1);
     setVal('print-up-z', s.printUpOverride?.[2] ?? 0);
     setVal('print-up-override', s.printUpOverride != null);
+    setVal('material-stock', s.materialStockId);
+    setVal('screw-holes', s.screwHoles);
+    setVal('screw-dia', s.screwDia);
+
+    const profile = getMaterialProfile(s.materialStockId);
+    const note = document.getElementById('material-stock-note');
+    if (note && profile) {
+      note.textContent = `${profile.nominal} → ${profile.actualLabel}${profile.notes ? ' · ' + profile.notes : ''}`;
+    }
 
     const freqVal = document.getElementById('freq-val');
     if (freqVal) freqVal.textContent = `V${s.freq}`;
@@ -295,6 +323,9 @@ export class GeodesicApp {
     });
     document.querySelectorAll('.rect-only').forEach((el) => {
       (el as HTMLElement).style.display = isRound ? 'none' : 'flex';
+    });
+    document.querySelectorAll('.timber-hide-flare').forEach((el) => {
+      (el as HTMLElement).style.display = isRound ? 'flex' : 'none';
     });
 
     const presetSelect = document.getElementById('preset-select') as HTMLSelectElement | null;

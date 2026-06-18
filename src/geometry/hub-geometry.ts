@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { DomeData, HubParams } from '../types';
 import { DOME_RADIUS, EPS } from '../types';
+import { createCleanTimberSocket, createTimberNodeCore } from './timber-socket';
 
 export function smoothStep01(t: number): number {
   const x = Math.max(0, Math.min(1, t));
@@ -16,119 +17,8 @@ export function prepGeo(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return geo;
 }
 
-function rectFrameShape(outerW: number, outerH: number, innerW: number, innerH: number): THREE.Shape {
-  const shape = new THREE.Shape();
-  shape.moveTo(-outerW / 2, -outerH / 2);
-  shape.lineTo(outerW / 2, -outerH / 2);
-  shape.lineTo(outerW / 2, outerH / 2);
-  shape.lineTo(-outerW / 2, outerH / 2);
-  shape.closePath();
-
-  const hole = new THREE.Path();
-  hole.moveTo(-innerW / 2, -innerH / 2);
-  hole.lineTo(-innerW / 2, innerH / 2);
-  hole.lineTo(innerW / 2, innerH / 2);
-  hole.lineTo(innerW / 2, -innerH / 2);
-  hole.closePath();
-  shape.holes.push(hole);
-  return shape;
-}
-
-function createRectSleeveGeometry(
-  innerW: number,
-  innerH: number,
-  wall: number,
-  length: number,
-  chamfer: number,
-  detail: number
-): THREE.BufferGeometry {
-  const outerW = innerW + wall * 2;
-  const outerH = innerH + wall * 2;
-  const bevel = Math.min(Math.max(chamfer * 0.35, 0), wall * 0.35);
-  const geo = new THREE.ExtrudeGeometry(rectFrameShape(outerW, outerH, innerW, innerH), {
-    depth: length,
-    steps: 1,
-    curveSegments: Math.max(4, Math.round((detail || 32) / 12)),
-    bevelEnabled: bevel > EPS,
-    bevelSegments: bevel > EPS ? 2 : 0,
-    bevelSize: bevel,
-    bevelThickness: bevel,
-  });
-  geo.rotateX(-Math.PI / 2);
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function createTaperedBoxGeometry(
-  rootW: number,
-  tipW: number,
-  rootH: number,
-  tipH: number,
-  length: number
-): THREE.BufferGeometry {
-  const rw = rootW / 2;
-  const tw = tipW / 2;
-  const rh = rootH / 2;
-  const th = tipH / 2;
-  const v = [
-    [-rw, 0, -rh],
-    [rw, 0, -rh],
-    [rw, 0, rh],
-    [-rw, 0, rh],
-    [-tw, length, -th],
-    [tw, length, -th],
-    [tw, length, th],
-    [-tw, length, th],
-  ];
-  const faces = [
-    [0, 2, 1],
-    [0, 3, 2],
-    [4, 5, 6],
-    [4, 6, 7],
-    [0, 1, 5],
-    [0, 5, 4],
-    [1, 2, 6],
-    [1, 6, 5],
-    [2, 3, 7],
-    [2, 7, 6],
-    [3, 0, 4],
-    [3, 4, 7],
-  ];
-  const pos: number[] = [];
-  for (const f of faces) for (const i of f) pos.push(...(v[i] as number[]));
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.computeVertexNormals();
-  return geo;
-}
-
 function createTimberSocketGeometries(p: HubParams): THREE.BufferGeometry[] {
-  const innerW = p.lumW + p.tol * 2;
-  const innerH = p.lumH + p.tol * 2;
-  const wall = Math.max(2, p.wall);
-  const outerW = innerW + wall * 2;
-  const outerH = innerH + wall * 2;
-  const rootLen = Math.max(wall * 2.4, Math.min(p.lumH * 0.32, 34));
-  const sleeveLen = Math.max(p.lumH * 1.05, p.lumW * 1.9);
-  const sleeveStart = rootLen * 0.42;
-  const blend = Math.max(1, p.bodyScale);
-
-  const root = createTaperedBoxGeometry(
-    outerW * (1.08 + (blend - 1) * 0.18),
-    outerW * 1.03,
-    outerH * (1.1 + (blend - 1) * 0.18),
-    outerH * 1.03,
-    rootLen
-  );
-
-  const sleeve = createRectSleeveGeometry(innerW, innerH, wall, sleeveLen, p.chamfer, p.detail);
-  sleeve.translate(0, sleeveStart, 0);
-
-  const lipLen = Math.max(wall * 1.25, 6);
-  const lip = createRectSleeveGeometry(innerW, innerH, wall * 1.45, lipLen, p.chamfer, p.detail);
-  lip.translate(0, sleeveStart + sleeveLen - lipLen * 0.85, 0);
-
-  return [root, sleeve, lip];
+  return createCleanTimberSocket(p);
 }
 
 function buildOrganicSocketProfile(
@@ -137,7 +27,8 @@ function buildOrganicSocketProfile(
   socketLen: number,
   boreDep: number,
   bodyScale: number,
-  taper: number
+  taper: number,
+  screwDia = 0
 ): THREE.Vector2[] {
   const pts: THREE.Vector2[] = [];
   const flareR = outerR * bodyScale;
@@ -158,6 +49,11 @@ function buildOrganicSocketProfile(
     if (t > 0.85) {
       const lip = smoothStep01((t - 0.85) / 0.15);
       r -= Math.min(taper, (outerR - innerR) * 0.75) * lip;
+    }
+    // Set-screw pilot indent (~40% along socket)
+    if (screwDia > EPS && t > 0.34 && t < 0.48) {
+      const dent = smoothStep01(1 - Math.abs(t - 0.41) / 0.07);
+      r -= (screwDia / 2) * dent * 0.85;
     }
     pts.push(new THREE.Vector2(r, y));
   }
@@ -262,7 +158,15 @@ export function createHub(
     const oR = iR + p.wall;
     const sLen = p.rodD * 2.5;
     const bDep = p.rodD * 1.3;
-    const profile = buildOrganicSocketProfile(iR, oR, sLen, bDep, p.bodyScale, p.chamfer);
+    const profile = buildOrganicSocketProfile(
+      iR,
+      oR,
+      sLen,
+      bDep,
+      p.bodyScale,
+      p.chamfer,
+      p.screwHoles ? p.screwDia ?? 0 : 0
+    );
     const tpl = new THREE.LatheGeometry(profile, p.detail);
 
     for (const dir of dirs) {
@@ -284,16 +188,7 @@ export function createHub(
       }
     }
 
-    const innerW = p.lumW + p.tol * 2;
-    const innerH = p.lumH + p.tol * 2;
-    const coreR = Math.max(innerW, innerH) * (0.36 + (p.bodyScale - 1) * 0.08) + p.wall;
-    const core = new THREE.SphereGeometry(
-      coreR,
-      Math.max(20, p.detail / 2),
-      Math.max(12, p.detail / 3)
-    );
-    core.scale(1.05, 0.86, 1.05);
-    geos.push(prepGeo(core));
+    geos.push(createTimberNodeCore(p));
   }
 
   if (!geos.length) return null;

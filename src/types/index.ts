@@ -61,6 +61,9 @@ export interface AppSettings {
   showBuildGuide: boolean;
   printUpOverride: [number, number, number] | null;
   presetId: string | null;
+  materialStockId: string;
+  screwHoles: boolean;
+  screwDia: number;
 }
 
 export interface HubParams {
@@ -77,6 +80,8 @@ export interface HubParams {
   footMargin: number;
   printFrame?: boolean;
   printUpOverride?: [number, number, number] | null;
+  screwHoles?: boolean;
+  screwDia?: number;
 }
 
 export interface StlValidationResult {
@@ -120,6 +125,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showBuildGuide: true,
   printUpOverride: null,
   presetId: null,
+  materialStockId: 'pvc-0.75',
+  screwHoles: true,
+  screwDia: 4.2,
 };
 
 export const DOME_RADIUS = 5;

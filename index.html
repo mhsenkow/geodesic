@@ -39,10 +39,17 @@
   <div class="section">
     <div class="section-header"><span>⚙ Material</span><span class="chv">▾</span></div>
     <div class="section-body">
-      <div class="cg"><label>Type</label><div class="radio-group"><input type="radio" name="matType" id="mat-round" value="round" checked><label for="mat-round">Round PVC/EMT</label><input type="radio" name="matType" id="mat-rect" value="rect"><label for="mat-rect">Timber/Lumber</label></div></div>
+      <div class="cg">
+        <label for="material-stock">Standard Stock Size</label>
+        <select id="material-stock"></select>
+        <p id="material-stock-note" class="hint-text" style="margin-top:6px;">Actual dimensions shown for off-the-shelf parts.</p>
+      </div>
+      <div class="cg"><label>Type</label><div class="radio-group"><input type="radio" name="matType" id="mat-round" value="round" checked><label for="mat-round">Round Tube / Rod</label><input type="radio" name="matType" id="mat-rect" value="rect"><label for="mat-rect">Timber / Lumber</label></div></div>
       <div class="cg round-only" id="grp-rod-diam"><label>Outer Diameter (mm)</label><input type="number" id="rodDiameter" value="26.7" step="0.1" min="5" max="80"></div>
-      <div class="cg rect-only" id="grp-lum-w"><label>Lumber Width (mm)</label><input type="number" id="lumberW" value="38" step="1" min="10" max="100"></div>
-      <div class="cg rect-only" id="grp-lum-h"><label>Lumber Height (mm)</label><input type="number" id="lumberH" value="89" step="1" min="20" max="200"></div>
+      <div class="cg rect-only" id="grp-lum-w"><label>Lumber Width (mm)</label><input type="number" id="lumberW" value="38" step="0.1" min="10" max="150"></div>
+      <div class="cg rect-only" id="grp-lum-h"><label>Lumber Depth (mm)</label><input type="number" id="lumberH" value="89" step="0.1" min="20" max="200"></div>
+      <div class="toggle-row"><span>Screw Pilot Holes</span><input type="checkbox" class="toggle" id="screw-holes" checked></div>
+      <div class="cg"><label>Screw / Set-Screw Size</label><select id="screw-dia"><option value="3.3">M4 wood screw (3.3 mm)</option><option value="4.2" selected>#8 wood screw (4.2 mm)</option><option value="5.0">M5 / #10 (5.0 mm)</option></select></div>
     </div>
   </div>
 
@@ -103,7 +110,7 @@
     <div class="hint-text"><b>Print Ready:</b> Inspector and STL export use a Z-up print frame with the build surface on the bed.</div>
 
     <div class="insp-section-title">Organic Refinement</div>
-    <div class="cg"><label>Organic Webbing (Flare Scale)</label><div class="cr"><input type="range" id="hub-body" min="1" max="2.5" value="1.6" step="0.1"><span class="rv" id="hub-body-val">1.6x</span></div></div>
+    <div class="cg timber-hide-flare"><label>Organic Webbing (Flare Scale)</label><div class="cr"><input type="range" id="hub-body" min="1" max="2.5" value="1.6" step="0.1"><span class="rv" id="hub-body-val">1.6x</span></div></div>
     <div class="cg"><label>Entry Chamfer (mm)</label><div class="cr"><input type="range" id="hub-chamfer" min="0" max="5" value="2" step="0.5"><span class="rv" id="hub-chamfer-val">2.0</span></div></div>
     <div class="cg"><label>Mesh Detail (Segments)</label><div class="cr"><input type="range" id="hub-detail" min="16" max="96" value="48" step="8"><span class="rv" id="hub-detail-val">48</span></div></div>
     <div class="toggle-row"><span>Show Wireframe</span><input type="checkbox" class="toggle" id="hub-wireframe"></div>

@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-06-18
+
+### Added
+
+- **Standard stock catalog** — 1×4, 2×4, 2×6 lumber; PVC Sch40; EMT conduit; solid rod (actual mm dims)
+- **Material stock picker** in sidebar with nominal → actual size notes
+- **Screw pilot holes** for timber (through-wall) and round tube (set-screw dimples)
+- Screw size selector (#8 / M4 / M5)
+- Pavilion 2×6 preset
+
+### Changed
+
+- **Timber hub geometry rebuilt** — clean four-wall sockets + compact box node (no organic sphere/taper mess)
+- Timber mode hides organic flare slider; body scale capped for structural hubs
+- Shed preset uses proper 2×4 catalog dimensions
+
 ## [1.0.0] - 2026-06-18
 
 ### Added
