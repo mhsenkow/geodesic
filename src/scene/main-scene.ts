@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { AppSettings, DomeData, HubParams, HubType } from '../types';
 import { HUB_COLORS } from '../types';
-import { createHub, disposeObject, previewHubScale } from '../geometry/hub-geometry';
+import { disposeObject, previewHubScale } from '../geometry/hub-geometry';
+import { buildHubInstance, clearHubPrototypeCache } from '../geometry/hub-prototype';
 
 export class MainScene {
   readonly scene = new THREE.Scene();
@@ -98,15 +99,28 @@ export class MainScene {
     }
 
     if (settings.showHubs) {
-      const hp: HubParams = { ...hubParams, detail: 24, printFrame: false, printFoot: false };
+      // Dome preview: build one Manifold hub per hub-type, then instantiate each
+      // copy by rotation — CSG runs ~(hub-type count) times, not per vertex.
+      const hp: HubParams = {
+        ...hubParams,
+        detail: Math.min(hubParams.detail, 36),
+        domePreview: true,
+        printFrame: false,
+        printFoot: false,
+      };
       const hvs = previewHubScale(hp);
       const rendered = new Set<number>();
+      clearHubPrototypeCache();
       for (const ht of hubTypes) {
         for (const vi of ht.verts) {
           if (rendered.size > 150) break;
-          const hg = createHub(vi, dome, hp);
+          let hg: THREE.BufferGeometry | null;
+          try {
+            hg = buildHubInstance(ht, dome, vi, hp, hvs);
+          } catch {
+            continue;
+          }
           if (!hg) continue;
-          hg.scale(hvs, hvs, hvs);
           const mesh = new THREE.Mesh(
             hg,
             new THREE.MeshStandardMaterial({ color: ht.color, metalness: 0.7, roughness: 0.25 })

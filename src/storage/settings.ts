@@ -1,12 +1,13 @@
 import type { AppSettings } from '../types';
 import { DEFAULT_SETTINGS } from '../types';
+import { defaultUnitSystem } from '../units';
 
 const STORAGE_KEY = 'geodesic-settings-v1';
 
 export function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
+    if (!raw) return { ...DEFAULT_SETTINGS, unitSystem: defaultUnitSystem() };
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     return { ...DEFAULT_SETTINGS, ...parsed };
   } catch {

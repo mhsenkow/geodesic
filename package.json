@@ -1,6 +1,6 @@
 {
   "name": "geodesic",
-  "version": "1.2.0",
+  "version": "1.6.0",
   "description": "Generate organic, 3D-printable geodesic dome connector hubs",
   "license": "MIT",
   "type": "module",
@@ -15,6 +15,7 @@
     "test:visual:update": "playwright test tests/visual --update-snapshots"
   },
   "dependencies": {
+    "manifold-3d": "^3.5.1",
     "three": "^0.160.0"
   },
   "devDependencies": {

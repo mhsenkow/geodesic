@@ -6,6 +6,14 @@ import {
 } from '../../src/materials/catalog';
 
 describe('material catalog', () => {
+  it('includes standard 1x2 lumber actual dimensions', () => {
+    const oneByTwo = getMaterialProfile('lumber-1x2');
+    expect(oneByTwo).toBeDefined();
+    expect(oneByTwo!.lumW).toBeCloseTo(19.05, 0);
+    expect(oneByTwo!.lumH).toBeCloseTo(38.1, 0);
+    expect(oneByTwo!.matType).toBe('rect');
+  });
+
   it('includes standard 2x4 lumber actual dimensions', () => {
     const twoByFour = getMaterialProfile('lumber-2x4');
     expect(twoByFour).toBeDefined();

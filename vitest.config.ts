@@ -1,14 +1,19 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, mergeConfig } from 'vitest/config';
+import viteConfig from './vite.config';
 import path from 'path';
 
-export default defineConfig({
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
+export default mergeConfig(
+  viteConfig,
+  defineConfig({
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
     },
-  },
-  test: {
-    environment: 'node',
-    include: ['tests/unit/**/*.test.ts'],
-  },
-});
+    test: {
+      environment: 'node',
+      include: ['tests/unit/**/*.test.ts'],
+      setupFiles: ['tests/setup/manifold.ts'],
+    },
+  })
+);

@@ -2,6 +2,106 @@
 
 All notable changes to this project are documented here. Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-06-18
+
+### Changed
+
+- **Unified Manifold CSG hub engine** for both round and timber, organic and sharp.
+  Hubs are now built as real watertight solids: `union(node + strut shells)` →
+  `smoothOut()` + `refineToLength()` → subtract rod/lumber bores → subtract screw
+  holes. This replaces the merge-and-weld mesh path (overlapping sockets welded
+  into a triangle soup) that produced self-intersecting, non-watertight shells.
+- **Genuinely organic surfaces.** `smoothOut()` fills tangent vectors and
+  `refineToLength()` tessellates the curved surface (the Weaverbird / subdivision
+  analog). The previous code called `smoothOut()` without refining, so the
+  organic blend never materialized.
+- **Watertight boolean print base** (round + timber). The base is unioned in
+  Manifold and the whole orient → base → seat-on-bed pipeline stays in Manifold
+  until a single mesh conversion, so the plate is fused, not a merged shell.
+- **Fast dome preview** via per-hub-type prototype caching: CSG runs once per hub
+  type and each placement is an instanced rotation, not a fresh solve.
+- Dome preview no longer carries a print base (cleaner assembly view); the base
+  appears on the standalone printable hub in the inspector and STL export.
+
+### Added
+
+- `Entry Bevel` now subtracts a conical (round) / flared rectangular (timber)
+  lead-in at each socket mouth for easier strut insertion.
+- `Socket Depth` now scales round sockets too (was timber-only).
+- `Subdivide Mesh` drives an extra refinement pass on the organic hull.
+- Manifold-integrity unit tests: every round/timber, organic/sharp hub — and
+  every classified hub type of a real V2 dome — is asserted watertight
+  (single solid, `status() === NoError`, no open or non-manifold edges).
+- Reworked presets, including a Sharp vs Organic timber pair and a soft
+  "pebble" playground hub, all tuned for the new engine.
+
+### Fixed
+
+- **Dome-preview hub alignment.** Same-class hubs can be mirror images of the
+  cached prototype, which a pure rotation can never align (struts were off by up
+  to ~70°). Placement is now reflection-aware (mirrors the prototype + flips
+  winding when a reflection fits better) and falls back to an exact per-vertex
+  rebuild when a class signature matched only by coincidence. A regression test
+  pins every V2/V3 hub to ≤3° or an exact rebuild.
+- STL validation quantizes coordinates before edge analysis, so the Float64→
+  Float32 export cast no longer reports spurious "open"/"non-manifold" edges on
+  dense organic meshes.
+- Falls back to the legacy lathe/extrude mesh only if Manifold WASM fails to load.
+
+### Parameters
+
+- Removed the duplicate wall-thickness slider (was both "Wall Thickness" and
+  "Socket Wall"); wall lives once in Slicer Settings.
+- `Junction Meet Blend` and `Socket Depth` now apply to round tube hubs too
+  (were timber-only) and are shown for both materials.
+- Refinement sliders (Blend Radius, Junction Meet, Entry Bevel, Mesh Detail,
+  Connection Length, Strut Size, Mesh Smooth, Socket Depth) now rebuild the dome
+  preview on release, so the assembled view reflects the same shape as the
+  inspector and export.
+- Rewrote slider labels/hints to describe the Manifold engine (node size, strut
+  sleeves, smooth+refine) instead of the removed lathe/Taubin pipeline; removed
+  the empty "Timber Tuning" section.
+
+## [1.5.0] - 2026-06-18
+
+### Changed
+
+- **Timber hubs rebuilt** as explicit profile-sweep geometry (same pattern as round PVC lathe hubs)
+- Tapered hollow sockets per strut axis; outer flare merges at center, inner lumber bore stays open
+- Removed SDF / marching-cubes pipeline (was producing non-printable shard meshes)
+
+## [1.4.0] - 2026-06-18
+
+### Added
+
+- **SDF + marching cubes** timber hub generator — smooth filleted junctions, fully hollow lumber passages
+- Laplacian mesh smoothing pass after isosurface extraction
+- Unit tests for hollow center and mesh generation
+
+### Changed
+
+- Timber hubs no longer use boolean-merged box primitives (which caused overlapping solids)
+- **Sharp** = tighter blend radius; **Organic** = wider smooth merge (Flare Scale controls blend)
+- STL export uses higher grid resolution than dome preview
+
+## [1.3.0] - 2026-06-18
+
+### Added
+
+- **Metric / Imperial unit toggle** in sidebar header (persisted in settings)
+- Dual-unit hints on lumber and tube dimension fields
+- Door width validation capped at ~85% of dome diameter
+
+### Changed
+
+- All dimension inputs display in the selected unit system (internal storage remains m + mm)
+- Material stock dropdown **filters by material type** (lumber only when timber selected)
+- Switching round ↔ timber auto-selects matching stock (2×4 or 3/4" PVC)
+- **Sharp timber hubs** use a compact central junction with sockets offset from center (cleaner geometry)
+- Slider readouts (tolerance, foot margin, bevel, wall) show mm or inches
+- Door width field hidden when door opening is disabled
+- Default unit system is metric
+
 ## [1.2.0] - 2026-06-18
 
 ### Added

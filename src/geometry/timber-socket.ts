@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { HubParams, HubStyle } from '../types';
 import { EPS } from '../types';
+import {
+  timberOuterDimsAtZ,
+  timberSocketLen,
+} from './timber-organic-profile';
 
 function prepGeo(g: THREE.BufferGeometry): THREE.BufferGeometry {
   let geo = g;
@@ -29,11 +33,6 @@ function rectFrameShape(outerW: number, outerH: number, innerW: number, innerH: 
   return shape;
 }
 
-function smoothStep(t: number): number {
-  const x = Math.max(0, Math.min(1, t));
-  return x * x * (3 - 2 * x);
-}
-
 function extrudeFrame(
   outerW: number,
   outerH: number,
@@ -57,7 +56,7 @@ function extrudeFrame(
   return geo;
 }
 
-interface TimberDims {
+export interface TimberDims {
   innerW: number;
   innerH: number;
   wall: number;
@@ -67,23 +66,48 @@ interface TimberDims {
   bevel: number;
 }
 
-function timberDims(p: HubParams): TimberDims {
+export function timberDims(p: HubParams): TimberDims {
   const innerW = p.lumW + p.tol * 2;
   const innerH = p.lumH + p.tol * 2;
   const wall = Math.max(2.5, p.wall);
   const outerW = innerW + wall * 2;
   const outerH = innerH + wall * 2;
-  const socketLen = Math.max(innerH * 0.78, 55);
-  const bevel = Math.min(Math.max(p.chamfer, 0), wall * 0.48);
+  const minLen = innerH * 0.55 + wall * 2 + 4;
+  const socketLen = Math.max(timberSocketLen(p, innerH, wall), minLen);
+  const bevel = Math.min(Math.max(p.chamfer, 0.5), wall * 0.48);
   return { innerW, innerH, wall, outerW, outerH, socketLen, bevel };
 }
 
-/** Single hollow tube segment along +Y (one watertight mesh per socket). */
-function buildSharpSocket(p: HubParams): THREE.BufferGeometry {
-  const d = timberDims(p);
-  const lipLen = Math.max(d.wall * 1.2, 4);
+export function flareParams(p: HubParams, _style: HubStyle, d: TimberDims) {
+  const flare = Math.max(1.08, p.bodyScale);
+  const rootLen = Math.max(d.innerH * 0.36, d.innerH * 0.42) * Math.min(flare, 1.7);
+  const lipLen = Math.max(d.wall * 1.25, 4);
+  const shaftLen = Math.max(d.socketLen - rootLen - lipLen, d.innerH * 0.28);
+  const steps = Math.max(8, Math.round((p.detail || 48) / 6));
+  return { flare, rootLen, lipLen, shaftLen, steps };
+}
 
-  const shaft = extrudeFrame(d.outerW, d.outerH, d.innerW, d.innerH, d.socketLen - lipLen, 0);
+/**
+ * One hollow timber socket along +Y (hub center at y=0, lumber entry at y=socketLen).
+ * Outer profile flares toward the hub; inner bore stays constant so the junction stays open.
+ */
+export function createTimberSocketTemplate(p: HubParams): THREE.BufferGeometry {
+  const d = timberDims(p);
+  const steps = Math.max(12, Math.round((p.detail || 48) / 4));
+  const parts: THREE.BufferGeometry[] = [];
+
+  for (let i = 0; i < steps; i++) {
+    const y0 = (i / steps) * d.socketLen;
+    const y1 = ((i + 1) / steps) * d.socketLen;
+    const segLen = y1 - y0;
+    if (segLen <= EPS) continue;
+    const o0 = timberOuterDimsAtZ(y0, d, p);
+    const seg = extrudeFrame(o0.outerW, o0.outerH, d.innerW, d.innerH, segLen, 0);
+    seg.translate(0, y0, 0);
+    parts.push(prepGeo(seg));
+  }
+
+  const lipLen = Math.max(d.wall * 1.25, 4);
   const lip = extrudeFrame(
     d.outerW,
     d.outerH,
@@ -94,71 +118,8 @@ function buildSharpSocket(p: HubParams): THREE.BufferGeometry {
     Math.max(2, Math.round(d.bevel))
   );
   lip.translate(0, d.socketLen - lipLen, 0);
-
-  const parts: THREE.BufferGeometry[] = [prepGeo(shaft), prepGeo(lip)];
-
-  if (p.screwHoles) {
-    parts.push(...screwHolePatches(d, p.screwDia ?? 4.2));
-  }
-
-  const merged = mergeGeometries(parts, false)!;
-  merged.computeVertexNormals();
-  return merged;
-}
-
-/** Tapered flare at hub + straight sleeve + rounded blend core. */
-function buildOrganicSocket(p: HubParams): THREE.BufferGeometry {
-  const d = timberDims(p);
-  const flare = Math.max(1, p.bodyScale);
-  const rootLen = Math.max(d.innerH * 0.38, 22) * Math.min(flare, 1.8);
-  const lipLen = Math.max(d.wall * 1.35, 5);
-  const shaftLen = d.socketLen - rootLen - lipLen;
-  const steps = Math.max(6, Math.round((p.detail || 48) / 8));
-
-  const parts: THREE.BufferGeometry[] = [];
-
-  for (let i = 0; i < steps; i++) {
-    const t0 = i / steps;
-    const t1 = (i + 1) / steps;
-    const tm = (t0 + t1) / 2;
-    const ease = 1 - smoothStep(tm);
-    const scale = 1 + (flare - 1) * ease * 1.15;
-    const ow = d.innerW + d.wall * 2 * scale;
-    const oh = d.innerH + d.wall * 2 * scale;
-    const segLen = rootLen / steps;
-    const seg = extrudeFrame(ow, oh, d.innerW, d.innerH, segLen, 0);
-    seg.translate(0, t0 * rootLen, 0);
-    parts.push(prepGeo(seg));
-  }
-
-  if (shaftLen > EPS) {
-    const shaft = extrudeFrame(d.outerW, d.outerH, d.innerW, d.innerH, shaftLen, 0);
-    shaft.translate(0, rootLen, 0);
-    parts.push(prepGeo(shaft));
-  }
-
-  const lip = extrudeFrame(
-    d.outerW,
-    d.outerH,
-    d.innerW,
-    d.innerH,
-    lipLen,
-    d.bevel,
-    Math.max(3, Math.round(d.bevel * 1.2))
-  );
-  lip.translate(0, d.socketLen - lipLen, 0);
   parts.push(prepGeo(lip));
 
-  const coreR = Math.max(d.outerW, d.outerH) * (0.42 + (flare - 1) * 0.12);
-  const core = new THREE.SphereGeometry(
-    coreR,
-    Math.max(16, Math.round((p.detail || 48) / 3)),
-    Math.max(12, Math.round((p.detail || 48) / 4))
-  );
-  core.scale(1.08, 0.72 * flare, 1.08);
-  core.translate(0, rootLen * 0.35, 0);
-  parts.push(prepGeo(core));
-
   if (p.screwHoles) {
     parts.push(...screwHolePatches(d, p.screwDia ?? 4.2));
   }
@@ -168,7 +129,11 @@ function buildOrganicSocket(p: HubParams): THREE.BufferGeometry {
   return merged;
 }
 
-/** Through-hole patches on wide socket faces (merged into socket mesh). */
+/** @deprecated alias */
+export function createTimberSocketGeometry(p: HubParams): THREE.BufferGeometry {
+  return createTimberSocketTemplate(p);
+}
+
 function screwHolePatches(d: TimberDims, screwDia: number): THREE.BufferGeometry[] {
   const r = Math.max(1.6, screwDia / 2);
   const y1 = d.socketLen * 0.36;
@@ -200,19 +165,4 @@ function screwHolePatches(d: TimberDims, screwDia: number): THREE.BufferGeometry
     }
   }
   return patches;
-}
-
-export function createTimberSocketGeometry(p: HubParams): THREE.BufferGeometry {
-  const style: HubStyle = p.hubStyle ?? 'sharp';
-  return style === 'organic' ? buildOrganicSocket(p) : buildSharpSocket(p);
-}
-
-/** @deprecated use createTimberSocketGeometry */
-export function createCleanTimberSocket(p: HubParams): THREE.BufferGeometry[] {
-  return [createTimberSocketGeometry(p)];
-}
-
-/** @deprecated sockets overlap at center; no separate core needed */
-export function createTimberNodeCore(_p: HubParams): THREE.BufferGeometry {
-  return prepGeo(new THREE.BufferGeometry());
 }

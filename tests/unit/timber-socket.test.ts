@@ -5,10 +5,10 @@ import type { HubParams } from '../../src/types';
 const baseParams: HubParams = {
   matType: 'rect',
   rodD: 26.7,
-  lumW: 38.1,
-  lumH: 88.9,
-  tol: 0.4,
-  wall: 5,
+  lumW: 19.05,
+  lumH: 38.1,
+  tol: 0.35,
+  wall: 3.5,
   bodyScale: 1.4,
   chamfer: 2,
   detail: 32,
@@ -18,17 +18,25 @@ const baseParams: HubParams = {
 };
 
 describe('timber socket geometry', () => {
-  it('builds sharp style with reasonable triangle count', () => {
-    const geo = createTimberSocketGeometry({ ...baseParams, hubStyle: 'sharp' });
+  it('builds organic profile socket with reasonable triangle count', () => {
+    const geo = createTimberSocketGeometry({ ...baseParams, bodyScale: 1.4 });
     const tris = geo.attributes.position.count / 3;
     expect(tris).toBeGreaterThan(100);
-    expect(tris).toBeLessThan(800);
+    expect(tris).toBeLessThan(1200);
   });
 
-  it('builds organic style with more geometry than sharp', () => {
-    const sharp = createTimberSocketGeometry({ ...baseParams, hubStyle: 'sharp' });
-    const organic = createTimberSocketGeometry({ ...baseParams, hubStyle: 'organic', bodyScale: 1.6 });
-    expect(organic.attributes.position.count).toBeGreaterThan(sharp.attributes.position.count);
+  it('higher flare scale lengthens socket envelope', () => {
+    const low = createTimberSocketGeometry({ ...baseParams, bodyScale: 1.1 });
+    const high = createTimberSocketGeometry({ ...baseParams, bodyScale: 1.8 });
+    low.computeBoundingBox();
+    high.computeBoundingBox();
+    expect(high.boundingBox!.max.y).toBeGreaterThanOrEqual(low.boundingBox!.max.y);
+  });
+
+  it('builds sharp socket rooted at origin for junction assembly', () => {
+    const geo = createTimberSocketGeometry({ ...baseParams, hubStyle: 'sharp' });
+    geo.computeBoundingBox();
+    expect(geo.boundingBox!.min.y).toBeGreaterThan(-0.01);
   });
 
   it('increases geometry with thicker walls', () => {

@@ -26,6 +26,7 @@ export function exportHubStl(
     ...hubParams,
     detail: Math.max(settings.detail, 64),
     printFrame: true,
+    printFoot: hubParams.printFoot ?? true,
   });
   if (!geo) return null;
 

@@ -10,15 +10,28 @@ import {
 } from '../geodesic/math';
 import { exportHubStl, downloadBlob, downloadText } from '../geometry/export';
 import { generateHubMapSvg } from '../guides/hub-map';
+import { estimateMaterial } from '../guides/material';
+import { renderCutList, renderMaterialEstimate, refreshChipStates } from './material-panel';
 import { loadSettings, saveSettings } from '../storage/settings';
 import { getPreset } from '../presets';
-import { getMaterialProfile, applyMaterialProfile } from '../materials/catalog';
+import { getMaterialProfile, applyMaterialProfile, defaultStockForMatType } from '../materials/catalog';
 import { MainScene } from '../scene/main-scene';
 import { InspectorScene, computePairAngles } from '../scene/inspector-scene';
 import { showToast } from './toast';
 import { withLoading } from './loading';
 import { bindKeyboard } from './keyboard';
 import { bindUi } from './bindings';
+import {
+  applyUnitLabels,
+  applyInputConstraints,
+  formatSliderValues,
+  formatMaterialNote,
+  refreshMaterialStockSelect,
+  setUnitToggle,
+  formatMeters,
+} from './units-ui';
+import { clampDoorWidth, mToDisplay } from '../units';
+import type { UnitSystem } from '../types';
 
 export class GeodesicApp {
   settings: AppSettings;
@@ -67,6 +80,14 @@ export class GeodesicApp {
       screwHoles: this.settings.screwHoles,
       screwDia: this.settings.screwDia,
       hubStyle: this.settings.hubStyle,
+      junctionMeet: this.settings.junctionMeet,
+      baseThickness: this.settings.baseThickness,
+      baseScale: this.settings.baseScale,
+      socketDepth: this.settings.socketDepth,
+      surfaceSmooth: this.settings.surfaceSmooth,
+      meshSubdivide: this.settings.meshSubdivide,
+      subdConnectionLength: this.settings.subdConnectionLength,
+      subdStrutSize: this.settings.subdStrutSize,
     };
   }
 
@@ -76,6 +97,7 @@ export class GeodesicApp {
 
   async buildDome(showAutoInspector = true): Promise<void> {
     await withLoading(async () => {
+      this.settings.doorW = clampDoorWidth(this.settings.doorW, this.settings.diam);
       const sp = genSphere(this.settings.freq, DOME_RADIUS);
       this.dome = truncDome(
         sp,
@@ -96,6 +118,7 @@ export class GeodesicApp {
       this.mainScene.buildDomeVisual(this.dome, this.hubTypes, this.settings, this.hubParams());
       this.updateStats();
       this.updateHubList();
+      this.updateMaterialPanels();
 
       if (showAutoInspector && !this.settings.inspectorOpen && this.hubTypes.length > 0) {
         this.openInspector(0, false);
@@ -105,6 +128,20 @@ export class GeodesicApp {
 
       this.persist();
     });
+  }
+
+  /** Refresh the cut-list and material/cost panels (volumes are cached per param set). */
+  updateMaterialPanels(): void {
+    if (!this.dome) return;
+    renderCutList(this.strutTypes, this.settings.unitSystem);
+    const est = estimateMaterial(
+      this.dome,
+      this.hubTypes,
+      this.strutTypes,
+      this.hubParams(),
+      this.settings
+    );
+    renderMaterialEstimate(est, this.settings);
   }
 
   openInspector(htIdx: number, persist = true): void {
@@ -144,15 +181,28 @@ export class GeodesicApp {
     }
 
     const angDiv = document.getElementById('insp-angles');
+    const angHint = document.getElementById('insp-angles-hint');
     if (angDiv) {
       angDiv.innerHTML = '';
-      for (const ang of computePairAngles(ht.dirs)) {
+      const angles = computePairAngles(ht.dirs);
+      const minAng = angles.length ? Math.min(...angles) : 180;
+      for (const ang of angles) {
         const chip = document.createElement('span');
         chip.className = 'insp-angle-chip';
         chip.textContent = ang.toFixed(1) + '°';
         chip.style.borderColor = ht.color;
         chip.style.color = ht.color;
+        if (Math.abs(ang - minAng) < 0.05) {
+          chip.style.fontWeight = '700';
+          chip.title = 'Tightest meet angle — raise Junction Meet if the core looks thin';
+        }
         angDiv.appendChild(chip);
+      }
+      if (angHint) {
+        angHint.textContent =
+          angles.length > 0
+            ? `Tightest strut meet: ${minAng.toFixed(1)}° — use Junction Meet blend to solidify the core.`
+            : '';
       }
     }
   }
@@ -196,12 +246,18 @@ export class GeodesicApp {
   }
 
   exportStrutTable(): void {
+    const u = this.settings.unitSystem;
     const mat =
       this.settings.matType === 'round'
-        ? `PVC/EMT ${this.settings.rodD}mm OD`
-        : `Timber ${this.settings.lumW}×${this.settings.lumH}mm`;
+        ? u === 'imperial'
+          ? `Round tube OD ${(this.settings.rodD / 25.4).toFixed(3)} in`
+          : `Round tube OD ${this.settings.rodD.toFixed(1)} mm`
+        : u === 'imperial'
+          ? `Timber ${(this.settings.lumW / 25.4).toFixed(2)}" × ${(this.settings.lumH / 25.4).toFixed(2)}"`
+          : `Timber ${this.settings.lumW.toFixed(0)}×${this.settings.lumH.toFixed(0)} mm`;
     const csv = strutTableCsv(this.strutTypes, mat);
-    downloadText(csv, `strut_lengths_V${this.settings.freq}_${this.settings.diam}m.csv`, 'text/csv');
+    const diamLabel = formatMeters(this.settings.diam, u).replace(/\s/g, '');
+    downloadText(csv, `strut_lengths_V${this.settings.freq}_${diamLabel}.csv`, 'text/csv');
     showToast('Strut length table downloaded.', 'success');
   }
 
@@ -230,11 +286,26 @@ export class GeodesicApp {
     const profile = getMaterialProfile(stockId);
     if (!profile) return;
     Object.assign(this.settings, applyMaterialProfile(profile));
-    if (profile.matType === 'rect') {
-      this.settings.bodyScale = Math.min(this.settings.bodyScale, 1.05);
+    if (profile.matType === 'rect' && this.settings.bodyScale < 1.2) {
+      this.settings.bodyScale = 1.5;
+      this.settings.hubStyle = 'organic';
     }
     this.syncFormFromSettings();
     if (rebuild) void this.buildDome(false);
+  }
+
+  setUnitSystem(units: UnitSystem): void {
+    if (this.settings.unitSystem === units) return;
+    this.settings.unitSystem = units;
+    this.syncFormFromSettings();
+    this.persist();
+  }
+
+  /** Keep stock picker aligned with round vs timber mode. */
+  ensureMaterialStockMatchesType(rebuild = false): void {
+    const profile = getMaterialProfile(this.settings.materialStockId);
+    if (profile && profile.matType === this.settings.matType) return;
+    this.applyMaterialStock(defaultStockForMatType(this.settings.matType), rebuild);
   }
 
   updateStats(): void {
@@ -265,6 +336,8 @@ export class GeodesicApp {
 
   syncFormFromSettings(): void {
     const s = this.settings;
+    s.doorW = clampDoorWidth(s.doorW, s.diam);
+
     const setVal = (id: string, val: string | number | boolean) => {
       const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
       if (!el) return;
@@ -272,21 +345,20 @@ export class GeodesicApp {
       else el.value = String(val);
     };
 
+    applyUnitLabels(s.unitSystem);
+    setUnitToggle(s.unitSystem);
+    refreshMaterialStockSelect(s.materialStockId, s.unitSystem, s.matType);
+    applyInputConstraints(s);
+
     setVal('frequency', s.freq);
-    setVal('diameter', s.diam);
     setVal('truncation', s.trunc);
-    setVal('rodDiameter', s.rodD);
-    setVal('lumberW', s.lumW);
-    setVal('lumberH', s.lumH);
     setVal('tolerance', s.tol);
-    setVal('wallThickness', s.wall);
     setVal('printFoot', s.printFoot);
     setVal('foot-margin', s.footMargin);
     setVal('showWireframe', s.showWire);
     setVal('showHubs', s.showHubs);
     setVal('showMarkers', s.showMarkers);
     setVal('door-enabled', s.door);
-    setVal('door-width', s.doorW);
     setVal('hub-body', s.bodyScale);
     setVal('hub-chamfer', s.chamfer);
     setVal('hub-detail', s.detail);
@@ -296,36 +368,53 @@ export class GeodesicApp {
     setVal('print-up-y', s.printUpOverride?.[1] ?? 1);
     setVal('print-up-z', s.printUpOverride?.[2] ?? 0);
     setVal('print-up-override', s.printUpOverride != null);
-    setVal('material-stock', s.materialStockId);
     setVal('screw-holes', s.screwHoles);
     setVal('screw-dia', s.screwDia);
     (document.getElementById('style-sharp') as HTMLInputElement).checked = s.hubStyle === 'sharp';
     (document.getElementById('style-organic') as HTMLInputElement).checked = s.hubStyle === 'organic';
-    setVal('hub-wall', s.wall);
+    setVal('junction-meet', s.junctionMeet);
+    setVal('socket-depth', s.socketDepth);
+    setVal('surface-smooth', s.surfaceSmooth);
+    setVal('mesh-subdivide', s.meshSubdivide);
+    setVal('subd-connection-length', s.subdConnectionLength);
+    setVal('subd-strut-size', s.subdStrutSize);
+    setVal('stock-length', mToDisplay(s.stockLength, s.unitSystem).toFixed(2));
+    setVal('stock-waste', s.stockWastePct);
+    setVal('stock-price', s.stockPrice);
+    setVal('filament-density', s.filamentDensity);
+    setVal('filament-price', s.filamentPrice);
+    const stockKind = document.getElementById('mat-stock-kind');
+    if (stockKind) stockKind.textContent = s.matType === 'round' ? 'Tube' : 'Timber';
 
     const profile = getMaterialProfile(s.materialStockId);
     const note = document.getElementById('material-stock-note');
-    if (note && profile) {
-      note.textContent = `${profile.nominal} → ${profile.actualLabel}${profile.notes ? ' · ' + profile.notes : ''}`;
+    if (note && profile) note.textContent = formatMaterialNote(profile, s.unitSystem);
+
+    const doorHint = document.getElementById('door-width-hint');
+    if (doorHint) {
+      const maxDoor = formatMeters(Math.max(0.5, s.diam * 0.85), s.unitSystem);
+      doorHint.textContent = `Max ${maxDoor} (~85% of dome)`;
     }
 
     const freqVal = document.getElementById('freq-val');
     if (freqVal) freqVal.textContent = `V${s.freq}`;
-    const tolVal = document.getElementById('tol-val');
-    if (tolVal) tolVal.textContent = s.tol.toFixed(2) + 'mm';
-    const footVal = document.getElementById('foot-margin-val');
-    if (footVal) footVal.textContent = s.footMargin.toFixed(1) + 'mm';
+    formatSliderValues(s);
     document.getElementById('hub-body-val')!.textContent = s.bodyScale.toFixed(1) + 'x';
-    document.getElementById('hub-chamfer-val')!.textContent = s.chamfer.toFixed(1);
     document.getElementById('hub-detail-val')!.textContent = String(s.detail);
-    document.getElementById('hub-wall-val')!.textContent = s.wall.toFixed(1);
+    const jmVal = document.getElementById('junction-meet-val');
+    if (jmVal) jmVal.textContent = s.junctionMeet.toFixed(2) + '×';
+    const sdVal = document.getElementById('socket-depth-val');
+    if (sdVal) sdVal.textContent = Math.round(s.socketDepth * 100) + '%';
+    const ssVal = document.getElementById('surface-smooth-val');
+    if (ssVal) ssVal.textContent = Math.round(s.surfaceSmooth * 100) + '%';
+    const sclVal = document.getElementById('subd-connection-length-val');
+    if (sclVal) sclVal.textContent = s.subdConnectionLength.toFixed(2) + '×';
+    const sssVal = document.getElementById('subd-strut-size-val');
+    if (sssVal) sssVal.textContent = s.subdStrutSize.toFixed(2) + '×';
 
     const isRound = s.matType === 'round';
-    const showFlare = isRound || s.hubStyle === 'organic';
-    const flareGroup = document.getElementById('flare-group');
-    if (flareGroup) flareGroup.style.display = showFlare ? 'flex' : 'none';
-    const styleGroup = document.getElementById('hub-style-group');
-    if (styleGroup) styleGroup.style.display = isRound ? 'none' : 'flex';
+    // Timber Style (Sharp/Organic) toggle is timber-only; the .rect-only rule
+    // below shows it for timber and hides it for round.
     (document.getElementById('mat-round') as HTMLInputElement).checked = isRound;
     (document.getElementById('mat-rect') as HTMLInputElement).checked = !isRound;
     document.querySelectorAll('.round-only').forEach((el) => {
@@ -334,12 +423,11 @@ export class GeodesicApp {
     document.querySelectorAll('.rect-only').forEach((el) => {
       (el as HTMLElement).style.display = isRound ? 'none' : 'flex';
     });
-    document.querySelectorAll('.timber-hide-flare').forEach((el) => {
-      (el as HTMLElement).style.display = showFlare ? 'flex' : 'none';
-    });
 
     const presetSelect = document.getElementById('preset-select') as HTMLSelectElement | null;
     if (presetSelect && s.presetId) presetSelect.value = s.presetId;
+
+    refreshChipStates();
   }
 
   private bindRaycast(): void {
@@ -383,5 +471,8 @@ export class GeodesicApp {
 }
 
 export function initApp(): GeodesicApp {
+  window.addEventListener('geodesic:manifold-failed', () => {
+    showToast('Timber hub engine failed to load. Hard-refresh the page.', 'error', 8000);
+  });
   return new GeodesicApp();
 }

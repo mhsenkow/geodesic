@@ -24,7 +24,35 @@ export interface MaterialProfile {
 
 /** Actual dimensions: US lumber (dry), PVC Sch40 OD, EMT OD, solid rod. */
 export const MATERIAL_CATALOG: MaterialProfile[] = [
-  // ── Lumber (actual cross-section, mm) ─────────────────────────────
+  // ── Lumber (actual cross-section, mm) — small to large ───────────
+  {
+    id: 'lumber-1x2',
+    name: '1×2 Furring / Light Frame',
+    category: 'lumber',
+    matType: 'rect',
+    nominal: '1×2',
+    actualLabel: '19 × 38 mm (0.75" × 1.5")',
+    lumW: 19.05,
+    lumH: 38.1,
+    lumberDepthAxis: 'height',
+    defaultTol: 0.35,
+    defaultWall: 3.5,
+    notes: 'Light domes, models, garden structures',
+  },
+  {
+    id: 'lumber-1x3',
+    name: '1×3 Board',
+    category: 'lumber',
+    matType: 'rect',
+    nominal: '1×3',
+    actualLabel: '19 × 64 mm (0.75" × 2.5")',
+    lumW: 19.05,
+    lumH: 63.5,
+    lumberDepthAxis: 'height',
+    defaultTol: 0.4,
+    defaultWall: 4,
+    notes: 'Mid-weight frames and bracing',
+  },
   {
     id: 'lumber-1x4',
     name: '1×4 Furring Strip',
@@ -37,7 +65,7 @@ export const MATERIAL_CATALOG: MaterialProfile[] = [
     lumberDepthAxis: 'height',
     defaultTol: 0.5,
     defaultWall: 4,
-    notes: 'Light frames, purlins, cladding battens',
+    notes: 'Purlins, cladding battens',
   },
   {
     id: 'lumber-2x4',
@@ -51,7 +79,7 @@ export const MATERIAL_CATALOG: MaterialProfile[] = [
     lumberDepthAxis: 'height',
     defaultTol: 0.4,
     defaultWall: 5,
-    notes: 'Most common US framing lumber',
+    notes: 'Heavy framing, large sheds',
   },
   {
     id: 'lumber-2x6',
@@ -232,13 +260,18 @@ export function getMaterialProfile(id: string): MaterialProfile | undefined {
   return MATERIAL_CATALOG.find((m) => m.id === id);
 }
 
-export function getMaterialsByCategory(): Map<MaterialCategory, MaterialProfile[]> {
+export function getMaterialsByCategory(matType?: MaterialType): Map<MaterialCategory, MaterialProfile[]> {
   const map = new Map<MaterialCategory, MaterialProfile[]>();
   for (const m of MATERIAL_CATALOG) {
+    if (matType && m.matType !== matType) continue;
     if (!map.has(m.category)) map.set(m.category, []);
     map.get(m.category)!.push(m);
   }
   return map;
+}
+
+export function defaultStockForMatType(matType: MaterialType): string {
+  return matType === 'rect' ? 'lumber-1x2' : 'pvc-0.75';
 }
 
 export function applyMaterialProfile(profile: MaterialProfile): {
@@ -253,8 +286,8 @@ export function applyMaterialProfile(profile: MaterialProfile): {
   return {
     matType: profile.matType,
     rodD: profile.rodD ?? 26.67,
-    lumW: profile.lumW ?? 38.1,
-    lumH: profile.lumH ?? 88.9,
+    lumW: profile.lumW ?? 19.05,
+    lumH: profile.lumH ?? 38.1,
     tol: profile.defaultTol,
     wall: profile.defaultWall,
     materialStockId: profile.id,
