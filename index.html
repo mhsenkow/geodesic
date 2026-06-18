@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geodesic Dome Hub Generator — Organic 3D Printable Connectors</title>
+  <meta name="description" content="Generate organic, Weaverbird-style geodesic dome connector hubs for 3D printing.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="logo"><h1>GEODESIC</h1><p>Organic Hub Generator</p></div>
+
+  <div class="section">
+    <div class="section-header"><span>★ Presets</span><span class="chv">▾</span></div>
+    <div class="section-body">
+      <div class="cg">
+        <label for="preset-select">Load Preset</label>
+        <select id="preset-select"><option value="">— Custom —</option></select>
+      </div>
+      <button class="btn btn-secondary" id="btn-reset-settings" type="button">Reset to Defaults</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span>⬡ Structure</span><span class="chv">▾</span></div>
+    <div class="section-body">
+      <div class="cg"><label>Frequency (V-Level)</label><div class="cr"><input type="range" id="frequency" min="1" max="4" value="2" step="1"><span class="rv" id="freq-val">V2</span></div></div>
+      <div class="cg"><label>Dome Diameter (m)</label><input type="number" id="diameter" value="4.0" step="0.5" min="1" max="30"></div>
+      <div class="cg"><label>Truncation</label><select id="truncation"><option value="0.5">½ Dome</option><option value="0.625" selected>⅝ Dome (Flat)</option><option value="0.75">¾ Dome</option></select></div>
+      <div class="toggle-row"><span>Door Opening</span><input type="checkbox" class="toggle" id="door-enabled"></div>
+      <div class="cg"><label>Door Width (m)</label><input type="number" id="door-width" value="2" step="0.25" min="0.5" max="6"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span>⚙ Material</span><span class="chv">▾</span></div>
+    <div class="section-body">
+      <div class="cg"><label>Type</label><div class="radio-group"><input type="radio" name="matType" id="mat-round" value="round" checked><label for="mat-round">Round PVC/EMT</label><input type="radio" name="matType" id="mat-rect" value="rect"><label for="mat-rect">Timber/Lumber</label></div></div>
+      <div class="cg round-only" id="grp-rod-diam"><label>Outer Diameter (mm)</label><input type="number" id="rodDiameter" value="26.7" step="0.1" min="5" max="80"></div>
+      <div class="cg rect-only" id="grp-lum-w"><label>Lumber Width (mm)</label><input type="number" id="lumberW" value="38" step="1" min="10" max="100"></div>
+      <div class="cg rect-only" id="grp-lum-h"><label>Lumber Height (mm)</label><input type="number" id="lumberH" value="89" step="1" min="20" max="200"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span>⊞ Slicer Settings</span><span class="chv">▾</span></div>
+    <div class="section-body">
+      <div class="cg"><label>Printer Tolerance (Shrinkage)</label><div class="cr"><input type="range" id="tolerance" min="0" max="1" value="0.3" step="0.05"><span class="rv" id="tol-val">0.30mm</span></div></div>
+      <div class="cg"><label>Wall Thickness (mm)</label><input type="number" id="wallThickness" value="5" step="0.5" min="2" max="15"></div>
+      <div class="toggle-row"><span>Build Surface Foot</span><input type="checkbox" class="toggle" id="printFoot" checked></div>
+      <div class="cg"><label>Build Foot Margin (mm)</label><div class="cr"><input type="range" id="foot-margin" min="0" max="12" value="6" step="0.5"><span class="rv" id="foot-margin-val">6.0mm</span></div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span>◎ Display</span><span class="chv">▾</span></div>
+    <div class="section-body">
+      <div class="toggle-row"><span>Wireframe</span><input type="checkbox" class="toggle" id="showWireframe" checked></div>
+      <div class="toggle-row"><span>Show Hubs on Dome</span><input type="checkbox" class="toggle" id="showHubs" checked></div>
+      <div class="toggle-row"><span>Vertex Markers</span><input type="checkbox" class="toggle" id="showMarkers" checked></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span>⬢ 3D Printable Hubs</span><span class="chv">▾</span></div>
+    <div class="section-body">
+      <button class="btn btn-primary" id="btn-open-inspector" type="button">🔍 Open Hub Inspector</button>
+      <div class="kbd-hint">Click vertex · I open · ← → cycle · E export · Esc close</div>
+      <div class="hub-list" id="hub-list"></div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btn-export-all" type="button" disabled>Export All Hubs (STL)</button>
+        <button class="btn btn-secondary" id="btn-export-struts" type="button">Export Strut Lengths (CSV)</button>
+        <button class="btn btn-secondary" id="btn-export-map" type="button">Export Hub Map (SVG)</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="stats-bar">
+    <div class="stat-grid">
+      <div class="stat-item"><span class="stat-label">Vertices</span><span class="stat-value" id="stat-verts">—</span></div>
+      <div class="stat-item"><span class="stat-label">Struts</span><span class="stat-value" id="stat-edges">—</span></div>
+      <div class="stat-item"><span class="stat-label">Hub Types</span><span class="stat-value" id="stat-hub-types">—</span></div>
+      <div class="stat-item"><span class="stat-label">Faces</span><span class="stat-value" id="stat-faces">—</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="hub-inspector">
+  <div class="insp-header">
+    <span>⬢ Organic Hub Inspector</span>
+    <button class="insp-close" id="insp-close" type="button" title="Close (Esc)">✕</button>
+  </div>
+  <div id="insp-canvas-wrap">
+    <div class="insp-canvas-badge" id="insp-badge">—</div>
+    <div class="insp-canvas-stats" id="insp-mesh-stats">—</div>
+    <span class="insp-canvas-label">Cyan grid = build surface · Drag to rotate</span>
+  </div>
+  <div class="insp-body">
+    <div class="hint-text"><b>Print Ready:</b> Inspector and STL export use a Z-up print frame with the build surface on the bed.</div>
+
+    <div class="insp-section-title">Organic Refinement</div>
+    <div class="cg"><label>Organic Webbing (Flare Scale)</label><div class="cr"><input type="range" id="hub-body" min="1" max="2.5" value="1.6" step="0.1"><span class="rv" id="hub-body-val">1.6x</span></div></div>
+    <div class="cg"><label>Entry Chamfer (mm)</label><div class="cr"><input type="range" id="hub-chamfer" min="0" max="5" value="2" step="0.5"><span class="rv" id="hub-chamfer-val">2.0</span></div></div>
+    <div class="cg"><label>Mesh Detail (Segments)</label><div class="cr"><input type="range" id="hub-detail" min="16" max="96" value="48" step="8"><span class="rv" id="hub-detail-val">48</span></div></div>
+    <div class="toggle-row"><span>Show Wireframe</span><input type="checkbox" class="toggle" id="hub-wireframe"></div>
+    <div class="toggle-row"><span>Show Build Plate</span><input type="checkbox" class="toggle" id="hub-build-guide" checked></div>
+
+    <div class="insp-section-title">Print Orientation</div>
+    <div class="toggle-row"><span>Override Print-Up Vector</span><input type="checkbox" class="toggle" id="print-up-override"></div>
+    <div id="print-up-group" class="cg">
+      <label>Print-Up (X, Y, Z)</label>
+      <input type="number" id="print-up-x" value="0" step="0.1">
+      <input type="number" id="print-up-y" value="1" step="0.1">
+      <input type="number" id="print-up-z" value="0" step="0.1">
+    </div>
+
+    <div class="insp-section-title">Socket Insertion Angles</div>
+    <div class="insp-angles" id="insp-angles"></div>
+
+    <button class="btn btn-primary" id="btn-export-hub" type="button">⬇ Download High-Res STL</button>
+  </div>
+</div>
+
+<div id="toast-container" aria-live="polite"></div>
+<div id="loading-overlay" aria-busy="false">
+  <div><div class="loading-spinner"></div><div class="loading-message">Building geometry…</div></div>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

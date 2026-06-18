@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "released": "2026-06-18",
+  "presets": [
+    {
+      "id": "greenhouse-v2",
+      "name": "Greenhouse 4m V2",
+      "stlPattern": "print_ready_hub_*_V2_26.7mm.stl",
+      "notes": "3/4 PVC, PETG, 0.3mm tolerance"
+    },
+    {
+      "id": "shed-timber",
+      "name": "Shed 3m Timber",
+      "stlPattern": "print_ready_hub_*_V2_timber.stl",
+      "notes": "2x4 lumber, PLA+, 0.4mm tolerance"
+    },
+    {
+      "id": "event-emt",
+      "name": "Event 6m EMT",
+      "stlPattern": "print_ready_hub_*_V3_33.4mm.stl",
+      "notes": "1 inch EMT, V3 frequency"
+    },
+    {
+      "id": "playground-v1",
+      "name": "Playground V1",
+      "stlPattern": "print_ready_hub_*_V1_21.3mm.stl",
+      "notes": "Small climbing dome, 1/2 inch PVC"
+    }
+  ],
+  "instructions": "Export STLs from the app using each preset, then place files in this release folder."
+}
