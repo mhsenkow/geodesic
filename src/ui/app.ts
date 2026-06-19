@@ -456,6 +456,23 @@ export class GeodesicApp {
     showToast('Vertex coordinates downloaded.', 'success');
   }
 
+  async exportSelectedGlb(): Promise<void> {
+    if (!this.dome || this.settings.selHub == null) return;
+    const result = await exportHubGlb(
+      this.settings.selHub,
+      this.hubTypes,
+      this.dome,
+      this.settings,
+      this.hubParams()
+    );
+    if (!result) {
+      showToast('GLB export failed.', 'error');
+      return;
+    }
+    downloadBlob(result.blob, result.filename);
+    showToast(`Exported ${result.filename}`, 'success');
+  }
+
   exportHubMap(): void {
     if (!this.dome) return;
     const svg = generateHubMapSvg(this.dome, this.hubTypes);
