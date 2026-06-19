@@ -282,6 +282,7 @@ export function applyMaterialProfile(profile: MaterialProfile): {
   tol: number;
   wall: number;
   materialStockId: string;
+  lumberDepthAxis?: 'width' | 'height';
 } {
   return {
     matType: profile.matType,
@@ -291,5 +292,6 @@ export function applyMaterialProfile(profile: MaterialProfile): {
     tol: profile.defaultTol,
     wall: profile.defaultWall,
     materialStockId: profile.id,
+    lumberDepthAxis: profile.lumberDepthAxis,
   };
 }

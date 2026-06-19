@@ -115,8 +115,10 @@ describe('exported hub mesh is watertight', () => {
   const cases: Array<{ label: string; p: HubParams }> = [
     { label: 'round organic', p: { ...baseRound, hubStyle: 'organic' } },
     { label: 'round sharp', p: { ...baseRound, hubStyle: 'sharp' } },
+    { label: 'round metaball', p: { ...baseRound, hubStyle: 'metaball', surfaceSmooth: 0.75 } },
     { label: 'timber organic', p: { ...baseTimber, hubStyle: 'organic' } },
     { label: 'timber sharp', p: { ...baseTimber, hubStyle: 'sharp' } },
+    { label: 'timber metaball', p: { ...baseTimber, hubStyle: 'metaball', surfaceSmooth: 0.7 } },
   ];
 
   for (const { label, p } of cases) {

@@ -1,9 +1,12 @@
 import * as THREE from 'three';
+import type { Manifold } from 'manifold-3d';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import { Font } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import type { HubParams } from '../types';
+import { getManifold } from './manifold-init';
+import { bufferGeometryToManifold } from './manifold-mesh';
 
 const font = new Font(helvetikerBold as unknown as ConstructorParameters<typeof Font>[0]);
 
@@ -65,27 +68,45 @@ function socketReach(p: HubParams): number {
   return stock * 2.5 * (depthFrac / 0.85);
 }
 
-export function addHubDecorations(
-  geo: THREE.BufferGeometry,
+interface DecorationLayout {
+  center: THREE.Vector3;
+  footY: number;
+  labelSize: number;
+  labelHeight: number;
+}
+
+function decorationLayout(
+  bbMin: THREE.Vector3,
+  bbMax: THREE.Vector3,
+  p: HubParams
+): DecorationLayout {
+  return {
+    center: new THREE.Vector3(
+      (bbMin.x + bbMax.x) / 2,
+      bbMin.y + (bbMax.y - bbMin.y) * 0.45,
+      (bbMin.z + bbMax.z) / 2
+    ),
+    footY: bbMin.y + Math.max(p.baseThickness ?? 4, 2) * 0.72,
+    labelSize: THREE.MathUtils.clamp(Math.max(p.rodD, p.lumH) * 0.18, 3.0, 7.0),
+    labelHeight: THREE.MathUtils.clamp(p.wall * 0.12, 0.45, 1.0),
+  };
+}
+
+/** Build embossed label / notch solids in print-up space (+Y up). */
+function buildDecorationGeometries(
   dirs: THREE.Vector3[],
   p: HubParams,
-  printUp: THREE.Vector3 | null
-): THREE.BufferGeometry {
-  if (!p.embossLabels && !p.alignmentNotches) return geo;
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox!;
-  const center = new THREE.Vector3(
-    (bb.min.x + bb.max.x) / 2,
-    bb.min.y + (bb.max.y - bb.min.y) * 0.45,
-    (bb.min.z + bb.max.z) / 2
-  );
+  printUp: THREE.Vector3 | null,
+  bbMin: THREE.Vector3,
+  bbMax: THREE.Vector3
+): THREE.BufferGeometry[] {
+  if (!p.embossLabels && !p.alignmentNotches) return [];
+
+  const { center, footY, labelSize, labelHeight } = decorationLayout(bbMin, bbMax, p);
   const reach = socketReach(p);
-  const labelSize = THREE.MathUtils.clamp(Math.max(p.rodD, p.lumH) * 0.18, 3.0, 7.0);
-  const labelHeight = THREE.MathUtils.clamp(p.wall * 0.12, 0.45, 1.0);
-  const parts: THREE.BufferGeometry[] = [prepGeo(geo)];
+  const parts: THREE.BufferGeometry[] = [];
 
   if (p.embossLabels && p.hubLabel && p.printFoot) {
-    const footY = bb.min.y + Math.max(p.baseThickness ?? 4, 2) * 0.72;
     const g = textGeo(p.hubLabel, labelSize * 1.1, labelHeight);
     const mat = new THREE.Matrix4().makeBasis(
       new THREE.Vector3(1, 0, 0),
@@ -119,7 +140,59 @@ export function addHubDecorations(
   });
 
   notchTemplate.dispose();
+  return parts;
+}
+
+/**
+ * Fuse embossed labels and alignment notches into the hub solid so export
+ * stays a single watertight manifold (not a merged triangle soup).
+ */
+export function unionHubDecorations(
+  hub: Manifold,
+  dirs: THREE.Vector3[],
+  p: HubParams,
+  printUp: THREE.Vector3 | null
+): Manifold {
+  if (!p.embossLabels && !p.alignmentNotches) return hub;
+
+  const bb = hub.boundingBox();
+  const bbMin = new THREE.Vector3(bb.min[0], bb.min[1], bb.min[2]);
+  const bbMax = new THREE.Vector3(bb.max[0], bb.max[1], bb.max[2]);
+  const geos = buildDecorationGeometries(dirs, p, printUp, bbMin, bbMax);
+  if (!geos.length) return hub;
+
+  const Manifold = getManifold();
+  const solids: Manifold[] = [hub];
+  for (const geo of geos) {
+    try {
+      solids.push(bufferGeometryToManifold(geo, Manifold));
+    } catch {
+      // Skip decoration pieces that fail manifold conversion rather than breaking export.
+    } finally {
+      geo.dispose();
+    }
+  }
+
+  if (solids.length === 1) return hub;
+  return Manifold.union(solids);
+}
+
+/** Legacy mesh merge — prefer unionHubDecorations on the Manifold path. */
+export function addHubDecorations(
+  geo: THREE.BufferGeometry,
+  dirs: THREE.Vector3[],
+  p: HubParams,
+  printUp: THREE.Vector3 | null
+): THREE.BufferGeometry {
+  if (!p.embossLabels && !p.alignmentNotches) return geo;
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox!;
+  const geos = buildDecorationGeometries(dirs, p, printUp, bb.min, bb.max);
+  if (!geos.length) return geo;
+
+  const parts: THREE.BufferGeometry[] = [prepGeo(geo), ...geos];
   const merged = mergeGeometries(parts, false);
+  for (const g of geos) g.dispose();
   if (!merged) return geo;
   merged.computeVertexNormals();
   return merged;

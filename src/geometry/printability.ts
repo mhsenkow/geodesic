@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import type { HubParams } from '../types';
+import type { HubParams, HubType } from '../types';
 import { socketTolerances } from './socket-fit';
+import { analyzeFitChecks } from './fit-checks';
 
 export interface PrintabilityReport {
   totalAreaMm2: number;
@@ -8,11 +9,28 @@ export interface PrintabilityReport {
   overhangPct: number;
   worstDownNormalY: number;
   minWallMm: number;
+  sampledMinWallMm: number;
   requiredWallMm: number;
   maxEdgeMm: number;
   avgEdgeMm: number;
   targetEdgeMm: number;
+  supportMaterialPct: number;
+  supportVolumeCm3: number;
+  platePackWidthMm: number;
+  platePackDepthMm: number;
+  plateFits: boolean;
   warnings: string[];
+}
+
+export const NOZZLE_PRESETS: Record<string, number> = {
+  '0.2': 0.2,
+  '0.4': 0.4,
+  '0.6': 0.6,
+  '0.8': 0.8,
+};
+
+export function nozzleFromPreset(preset: string | undefined, fallback: number): number {
+  return NOZZLE_PRESETS[preset ?? ''] ?? fallback;
 }
 
 export function targetTriangleLength(p: HubParams): number {
@@ -33,7 +51,11 @@ function triangleIndices(geo: THREE.BufferGeometry): number[] {
   return Array.from(geo.index.array);
 }
 
-export function analyzePrintability(geo: THREE.BufferGeometry, p: HubParams): PrintabilityReport {
+export function analyzePrintability(
+  geo: THREE.BufferGeometry,
+  p: HubParams,
+  dirs: THREE.Vector3[] = []
+): PrintabilityReport {
   const pos = geo.getAttribute('position') as THREE.BufferAttribute;
   const idx = triangleIndices(geo);
   const a = new THREE.Vector3();
@@ -75,15 +97,24 @@ export function analyzePrintability(geo: THREE.BufferGeometry, p: HubParams): Pr
   const nozzle = Math.max(0.1, p.nozzleDia ?? 0.4);
   const requiredWallMm = nozzle * 2;
   const tipWall = p.matType === 'round' ? Math.max(1.4, p.wall * 0.45) : p.wall;
-  const minWallMm = Math.min(p.wall, tipWall);
+  const paramWall = Math.min(p.wall, tipWall);
+  const fit = dirs.length ? analyzeFitChecks(geo, dirs, p) : null;
+  const sampledMinWallMm = fit?.sampledMinWallMm ?? paramWall;
+  const minWallMm = Math.min(paramWall, sampledMinWallMm);
   const targetEdgeMm = targetTriangleLength(p);
   const overhangPct = totalAreaMm2 > 0 ? (overhangAreaMm2 / totalAreaMm2) * 100 : 0;
   const avgEdgeMm = edgeCount ? edgeSum / edgeCount : 0;
+  const supportMaterialPct = overhangPct * 0.85;
+  const geoVolCm3 = totalAreaMm2 > 0 ? (totalAreaMm2 * 0.35) / 1000 : 0;
+  const supportVolumeCm3 = geoVolCm3 * (supportMaterialPct / 100);
   const warnings: string[] = [];
 
   if (overhangPct > 8) warnings.push(`${overhangPct.toFixed(1)}% of surface is steeper than a 45° self-support angle.`);
   if (minWallMm < requiredWallMm) warnings.push(`Minimum wall ${minWallMm.toFixed(2)} mm is below 2× nozzle (${requiredWallMm.toFixed(2)} mm).`);
   if (maxEdgeMm > targetEdgeMm * 1.45) warnings.push(`Largest triangle edge ${maxEdgeMm.toFixed(1)} mm exceeds the ${targetEdgeMm.toFixed(1)} mm export target.`);
+  if (fit?.meetAngleWarning) warnings.push(fit.meetAngleWarning);
+  if (fit?.strutFitWarning) warnings.push(fit.strutFitWarning);
+  if (fit?.firstLayerWarning) warnings.push(fit.firstLayerWarning);
 
   return {
     totalAreaMm2,
@@ -91,10 +122,52 @@ export function analyzePrintability(geo: THREE.BufferGeometry, p: HubParams): Pr
     overhangPct,
     worstDownNormalY,
     minWallMm,
+    sampledMinWallMm,
     requiredWallMm,
     maxEdgeMm,
     avgEdgeMm,
     targetEdgeMm,
+    supportMaterialPct,
+    supportVolumeCm3,
+    platePackWidthMm: 0,
+    platePackDepthMm: 0,
+    plateFits: true,
+    warnings,
+  };
+}
+
+/** Estimate packed plate footprint for hub types (one prototype each). */
+export function estimatePlatePack(
+  hubTypes: HubType[],
+  plateW: number,
+  plateD: number,
+  hubFootprintMm: number
+): Pick<PrintabilityReport, 'platePackWidthMm' | 'platePackDepthMm' | 'plateFits'> & { warnings: string[] } {
+  const padding = 10;
+  let cursorX = padding;
+  let cursorY = padding;
+  let rowDepth = 0;
+  let maxX = padding;
+  const warnings: string[] = [];
+  for (const ht of hubTypes) {
+    const width = hubFootprintMm * (1 + ht.val * 0.08);
+    const depth = hubFootprintMm * (1 + ht.val * 0.06);
+    if (cursorX + width + padding > plateW && cursorX > padding) {
+      cursorX = padding;
+      cursorY += rowDepth + padding;
+      rowDepth = 0;
+    }
+    maxX = Math.max(maxX, cursorX + width);
+    cursorX += width + padding;
+    rowDepth = Math.max(rowDepth, depth);
+  }
+  const usedDepth = cursorY + rowDepth + padding;
+  if (usedDepth > plateD) warnings.push(`Packed layout needs ~${usedDepth.toFixed(0)} mm depth (plate ${plateD} mm).`);
+  if (maxX > plateW) warnings.push(`Packed layout needs ~${maxX.toFixed(0)} mm width (plate ${plateW} mm).`);
+  return {
+    platePackWidthMm: maxX,
+    platePackDepthMm: usedDepth,
+    plateFits: maxX <= plateW && usedDepth <= plateD,
     warnings,
   };
 }

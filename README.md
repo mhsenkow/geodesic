@@ -4,7 +4,7 @@ Browser-based tool for designing **geodesic dome connector hubs** with Weaverbir
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**[Live demo](https://mhsenkow.github.io/geodesic/)** *(after enabling GitHub Pages in repo settings)*
+**[Live demo](https://mhsenkow.github.io/geodesic/)**
 
 ## Features
 

@@ -30,7 +30,9 @@
       <div class="cg">
         <label for="preset-select">Load Preset</label>
         <select id="preset-select"><option value="">— Custom —</option></select>
+        <p class="hint-text" id="preset-description">Custom configuration.</p>
       </div>
+      <button class="btn btn-secondary" id="btn-save-preset" type="button">Save Custom Preset</button>
       <button class="btn btn-secondary" id="btn-reset-settings" type="button">Reset to Defaults</button>
     </div>
   </div>
@@ -43,6 +45,7 @@
       <div class="cg"><label>Frequency (V-Level)</label><div class="cr"><input type="range" id="frequency" min="1" max="6" value="2" step="1"><span class="rv" id="freq-val">V2</span></div></div>
       <div class="cg"><label id="label-diameter">Dome Diameter (m)</label><input type="number" id="diameter" value="4.0" step="0.5" min="1" max="30"></div>
       <div class="cg"><label>Truncation</label><select id="truncation"><option value="0.5">½ Dome</option><option value="0.625" selected>⅝ Dome (Flat)</option><option value="0.75">¾ Dome</option></select></div>
+      <div class="toggle-row"><span>Flat Base Ring</span><input type="checkbox" class="toggle" id="flat-base" checked title="Adds a horizontal base ring at the truncation cut"></div>
       <div class="toggle-row"><span>Door Opening</span><input type="checkbox" class="toggle" id="door-enabled"></div>
       <div class="cg" id="door-width-group"><label id="label-door-width">Door Width (m)</label><input type="number" id="door-width" value="2" step="0.25" min="0.5" max="6"><p class="hint-text" id="door-width-hint">Max ~85% of dome diameter</p></div>
     </div>
@@ -76,9 +79,14 @@
       </div>
       <div class="input-pair">
         <div class="cg"><label id="label-nozzle-dia">Nozzle (mm)</label><input type="number" id="nozzle-dia" value="0.4" step="0.05" min="0.1" max="1.2"></div>
-        <div class="cg"><label>Plate Width (mm)</label><input type="number" id="build-plate-w" value="220" step="5" min="60" max="500"></div>
+        <div class="cg"><label>Nozzle Preset</label><select id="nozzle-preset"><option value="0.2">0.2 mm fine</option><option value="0.4" selected>0.4 mm standard</option><option value="0.6">0.6 mm fast</option><option value="0.8">0.8 mm coarse</option></select></div>
       </div>
-      <div class="cg"><label>Plate Depth (mm)</label><input type="number" id="build-plate-d" value="220" step="5" min="60" max="500"></div>
+      <p class="hint-text">Tolerance tuning: see <a href="docs/PRINT-GUIDE.md" target="_blank" rel="noopener">Print Guide</a>.</p>
+      <div class="input-pair">
+        <div class="cg"><label>Plate Width (mm)</label><input type="number" id="build-plate-w" value="220" step="5" min="60" max="500"></div>
+        <div class="cg"><label>Plate Depth (mm)</label><input type="number" id="build-plate-d" value="220" step="5" min="60" max="500"></div>
+      </div>
+      <div class="cg"><label>Filament Diameter (mm)</label><input type="number" id="filament-diameter" value="1.75" step="0.05" min="1.5" max="3"></div>
       <div class="cg"><label id="label-wall">Wall Thickness (mm)</label><input type="number" id="wallThickness" value="5" step="0.5" min="2" max="15"></div>
       <div class="toggle-row"><span>Build Surface Foot</span><input type="checkbox" class="toggle" id="printFoot" checked></div>
       <div class="cg"><label id="label-foot-margin">Build Foot Margin (mm)</label><div class="cr"><input type="range" id="foot-margin" min="0" max="12" value="6" step="0.5"><span class="rv" id="foot-margin-val">6.0mm</span></div></div>
@@ -91,6 +99,7 @@
       <div class="toggle-row"><span>Wireframe</span><input type="checkbox" class="toggle" id="showWireframe" checked></div>
       <div class="toggle-row"><span>Show Hubs on Dome</span><input type="checkbox" class="toggle" id="showHubs" checked></div>
       <div class="toggle-row"><span>Vertex Markers</span><input type="checkbox" class="toggle" id="showMarkers" checked></div>
+      <div class="cg"><label>Dome Preview Quality</label><select id="preview-quality"><option value="fast">Fast (markers + LOD)</option><option value="balanced" selected>Balanced</option><option value="full">Full (slow)</option></select><p class="hint-text">Preview caps detail at 24–36; export always uses ≥64 segments.</p></div>
     </div>
   </div>
 
@@ -101,12 +110,17 @@
       <div class="kbd-hint">Click vertex · I open · ← → cycle · E export · Esc close</div>
       <div class="hub-list" id="hub-list"></div>
       <div class="btn-row">
-        <button class="btn btn-secondary" id="btn-export-all" type="button" disabled>Export All Hubs (STL)</button>
+        <button class="btn btn-secondary" id="btn-export-all" type="button" disabled>Export All Hubs (ZIP)</button>
         <button class="btn btn-secondary" id="btn-export-plate" type="button">Export Build Plate (3MF)</button>
         <button class="btn btn-secondary" id="btn-export-struts" type="button">Export Strut Lengths (CSV)</button>
+        <button class="btn btn-secondary" id="btn-export-bom" type="button">Export BOM (CSV)</button>
+        <button class="btn btn-secondary" id="btn-export-vertices" type="button">Export Vertices (CSV)</button>
         <button class="btn btn-secondary" id="btn-export-map" type="button">Export Hub Map (SVG)</button>
         <button class="btn btn-secondary" id="btn-export-design" type="button">Export Design JSON</button>
+        <label class="btn btn-secondary" for="btn-import-design">Import Design JSON</label>
+        <input type="file" id="btn-import-design" accept="application/json,.json" hidden>
         <button class="btn btn-secondary" id="btn-copy-share" type="button">Copy Share URL</button>
+        <button class="btn btn-secondary" id="btn-keyboard-help" type="button">Keyboard Shortcuts</button>
       </div>
     </div>
   </div>
@@ -149,10 +163,10 @@
   </div>
 </div>
 
-<div id="hub-inspector">
+<div id="hub-inspector" role="dialog" aria-modal="true" aria-labelledby="insp-title">
   <div class="insp-header">
-    <span>⬢ Organic Hub Inspector</span>
-    <button class="insp-close" id="insp-close" type="button" title="Close (Esc)">✕</button>
+    <span id="insp-title">⬢ Organic Hub Inspector</span>
+    <button class="insp-close" id="insp-close" type="button" title="Close (Esc)" aria-label="Close inspector">✕</button>
   </div>
   <div id="insp-canvas-wrap">
     <div class="insp-canvas-badge" id="insp-badge">—</div>
@@ -160,7 +174,7 @@
     <span class="insp-canvas-label">Cyan grid = build surface · Drag to rotate</span>
   </div>
   <div class="insp-body">
-    <div class="hint-text" id="insp-print-hint"><b>Print Ready:</b> Inspector and STL export use a Z-up print frame with the build surface on the bed.</div>
+    <div class="hint-text" id="insp-print-hint"><b>Print Ready:</b> Inspector/export use Z-up with the build surface on the bed. Dome preview uses lower detail (see Display → Preview Quality).</div>
     <div class="validation-badges" id="insp-validation-badges"></div>
 
     <div class="insp-section-title">Hub Style &amp; Refinement</div>
@@ -188,8 +202,12 @@
     <div class="toggle-row"><span>Subdivide Mesh</span><input type="checkbox" class="toggle" id="mesh-subdivide" checked></div>
     <div class="toggle-row" title="Bore through the solid core — lighter, drains, prints faster"><span>Hollow Through-Core</span><input type="checkbox" class="toggle" id="bore-through"></div>
     <div class="toggle-row" title="Drainage / weight-saving vent through the print base"><span>Base Drain Vent</span><input type="checkbox" class="toggle" id="base-vent" checked></div>
+    <div class="toggle-row"><span>Tree-Support Base Flare</span><input type="checkbox" class="toggle" id="tree-support-base"></div>
     <div class="toggle-row"><span>Emboss Hub Labels</span><input type="checkbox" class="toggle" id="emboss-labels" checked></div>
+    <div class="toggle-row"><span>Preview Label Placement</span><input type="checkbox" class="toggle" id="emboss-preview"></div>
     <div class="toggle-row"><span>Alignment Notches</span><input type="checkbox" class="toggle" id="alignment-notches" checked></div>
+    <div class="cg"><label>Junction Drip (gravity bias)</label><div class="cr"><input type="range" id="junction-drip" min="0" max="1" value="0" step="0.05"><span class="rv">0%</span></div></div>
+    <div class="cg"><label>Surface Noise</label><div class="cr"><input type="range" id="surface-noise" min="0" max="0.5" value="0" step="0.02"><span class="rv">0%</span></div></div>
     <div class="toggle-row"><span>Overhang Heatmap</span><input type="checkbox" class="toggle" id="overhang-heatmap"></div>
     <div class="toggle-row"><span>Show Wireframe</span><input type="checkbox" class="toggle" id="hub-wireframe"></div>
     <div class="toggle-row"><span>Show Build Plate</span><input type="checkbox" class="toggle" id="hub-build-guide" checked></div>
@@ -207,8 +225,16 @@
     <p class="hint-text" id="insp-angles-hint"></p>
     <div class="insp-angles" id="insp-angles"></div>
 
+    <button class="btn btn-secondary" id="btn-revert-inspector" type="button">Revert Inspector Changes</button>
+    <button class="btn btn-secondary" id="btn-export-glb" type="button">Export GLB Preview</button>
     <button class="btn btn-primary" id="btn-export-hub" type="button">⬇ Download High-Res STL</button>
   </div>
+</div>
+
+<a class="skip-link" href="#sidebar">Skip to settings</a>
+<div id="keyboard-help" class="keyboard-help" role="dialog" aria-label="Keyboard shortcuts">
+  <h2>Keyboard shortcuts</h2>
+  <ul><li><kbd>I</kbd> Open inspector</li><li><kbd>E</kbd> Export STL</li><li><kbd>Esc</kbd> Close</li><li><kbd>←</kbd><kbd>→</kbd> Cycle hub types</li></ul>
 </div>
 
 <div id="toast-container" aria-live="polite"></div>

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { AppSettings, DomeData, HubParams, HubType, StrutType } from '../types';
 import { createHub } from '../geometry/hub-geometry';
+import { hubTypeFingerprint } from '../utils/cache-key';
 
 /** Enclosed volume (mm³) of a closed mesh via the signed-tetrahedron sum. */
 export function meshVolumeMm3(geo: THREE.BufferGeometry): number {
@@ -26,12 +27,46 @@ export function meshVolumeMm3(geo: THREE.BufferGeometry): number {
   return Math.abs(vol);
 }
 
-const FILAMENT_DIAMETER_MM = 1.75;
-
+const FILAMENT_DIAMETER_DEFAULT = 1.75;
+const VOL_CACHE_MAX = 64;
 const volCache = new Map<string, number>();
 
 function hubVolumeKey(ht: HubType, p: HubParams): string {
-  return `${ht.val}:${ht.angs.join(',')}:${ht.isBase}:${JSON.stringify(p)}`;
+  return hubTypeFingerprint(ht, p);
+}
+
+export function clearVolCache(): void {
+  volCache.clear();
+}
+
+function cacheVol(key: string, v: number): number {
+  if (volCache.size >= VOL_CACHE_MAX) {
+    const first = volCache.keys().next().value;
+    if (first) volCache.delete(first);
+  }
+  volCache.set(key, v);
+  return v;
+}
+
+/** First-fit decreasing stick count for 1D cut stock. */
+export function optimizeStickCount(lengthsM: number[], stockLenM: number, wastePct: number): number {
+  if (!lengthsM.length || stockLenM <= 0) return 0;
+  const waste = 1 + wastePct / 100;
+  const sorted = [...lengthsM].sort((a, b) => b - a);
+  const bins: number[] = [];
+  for (const len of sorted) {
+    const need = len * waste;
+    let placed = false;
+    for (let i = 0; i < bins.length; i++) {
+      if (bins[i] + need <= stockLenM) {
+        bins[i] += need;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) bins.push(Math.min(need, stockLenM));
+  }
+  return bins.length;
 }
 
 /** Printable solid volume (mm³) of one hub of this type — built once, cached. */
@@ -49,8 +84,7 @@ function hubPrintVolumeMm3(ht: HubType, dome: DomeData, p: HubParams): number {
   } catch {
     v = 0;
   }
-  volCache.set(key, v);
-  return v;
+  return cacheVol(key, v);
 }
 
 export interface MaterialEstimate {
@@ -88,10 +122,12 @@ export function estimateMaterial(
   const strutCount = strutTypes.reduce((s, t) => s + t.count, 0);
   const longestStrutM = strutTypes.reduce((m, t) => Math.max(m, t.length), 0);
   const stock = Math.max(0.1, settings.stockLength);
-  const waste = 1 + Math.max(0, settings.stockWastePct) / 100;
-  // A strut longer than the stock can't be cut from one stick — clamp usable length.
-  const sticksNeeded =
-    totalStrutLengthM > 0 ? Math.ceil((totalStrutLengthM * waste) / stock) : 0;
+  const wastePct = Math.max(0, settings.stockWastePct);
+  const expanded: number[] = [];
+  for (const t of strutTypes) {
+    for (let i = 0; i < t.count; i++) expanded.push(t.length);
+  }
+  const sticksNeeded = optimizeStickCount(expanded, stock, wastePct);
   const stockCost = sticksNeeded * Math.max(0, settings.stockPrice);
 
   // ── 3D print material ─────────────────────────────────────────
@@ -116,7 +152,8 @@ export function estimateMaterial(
   const filamentVolumeMm3 = printVolumeMm3 * fillFactor;
   const filamentVolumeCm3 = filamentVolumeMm3 / 1000;
   const printMassG = filamentVolumeCm3 * Math.max(0.1, settings.filamentDensity);
-  const filamentArea = Math.PI * (FILAMENT_DIAMETER_MM / 2) ** 2; // mm²
+  const filamentDia = settings.filamentDiameterMm ?? FILAMENT_DIAMETER_DEFAULT;
+  const filamentArea = Math.PI * (filamentDia / 2) ** 2;
   const filamentLengthM = filamentArea > 0 ? filamentVolumeMm3 / filamentArea / 1000 : 0;
   const printCost = (printMassG / 1000) * Math.max(0, settings.filamentPrice);
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Manifold } from 'manifold-3d';
 import type { HubParams } from '../types';
 import { choosePrintUp } from './hub-foot';
-import { addHubDecorations } from './hub-decorations';
+import { unionHubDecorations } from './hub-decorations';
 import { manifoldToBufferGeometry, transformManifold } from './manifold-mesh';
 import { targetTriangleLength } from './printability';
 import { sitManifoldOnBed, unionPrintBase } from './timber-print-base';
@@ -51,7 +51,7 @@ export function finishManifoldHub(
   const smooth = surfaceSmoothAmount(p);
   const shouldSmooth = !opts.skipSmooth && (p.printFrame || p.domePreview) && smooth > 0.008;
   if (shouldSmooth) {
-    hub = hub.smoothOut(50, smooth).refine(2);
+    hub = hub.smoothOut(50, smooth + (p.surfaceNoise ?? 0) * 0.04).refine(2);
   }
 
   // Watertight print base only for the standalone printable hub (inspector / export).
@@ -60,19 +60,19 @@ export function finishManifoldHub(
   }
 
   if (p.printFrame) {
-    hub = hub.refineToLength(targetTriangleLength({ ...p, matType }));
+    const target = targetTriangleLength({ ...p, matType });
+    hub = hub.refineToLength(p.meshSubdivide ? target * 0.82 : target);
+  }
+
+  if (p.printFrame && (p.embossLabels || p.alignmentNotches)) {
+    hub = unionHubDecorations(hub, dirs, { ...p, matType }, printUp);
   }
 
   if (p.printFrame) {
     hub = sitManifoldOnBed(hub);
   }
 
-  let geo = manifoldToBufferGeometry(hub);
-  if (p.printFrame) {
-    const decorated = addHubDecorations(geo, dirs, { ...p, matType }, printUp);
-    if (decorated !== geo) geo.dispose();
-    geo = decorated;
-  }
+  const geo = manifoldToBufferGeometry(hub);
   if (printUp) geo.userData.printUp = printUp.toArray();
   return geo;
 }

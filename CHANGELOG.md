@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here. Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-06-19
+
+### Added
+
+- **Watertight embossed labels** — hub labels and alignment notches fuse via Manifold
+  boolean union instead of merged triangle soup, so export stays a single closed solid.
+- **Metaball shell polish** — `smoothOut` + `refineToLength` on the SDF shell before socket
+  booleans for softer, Weaverbird-like joins while bores stay crisp.
+- **Export toolkit** — ZIP batch STL, GLB preview, BOM CSV, vertex coordinates CSV, design
+  JSON import, 3MF vertex dedup and per-hub quantity items.
+- **Printability upgrades** — meet-angle / socket-fit warnings, support material estimate,
+  build-plate pack check, nozzle presets, tree-support base flare, export gate on errors.
+- **UI & UX** — flat base ring toggle, preview quality LOD, custom preset save/load, inspector
+  revert, preset descriptions, keyboard shortcuts panel, debounced dome rebuild.
+- **Settings schema v2** — migrated localStorage, compact share URLs (`#s=…`).
+- **Performance** — stable cache fingerprints, persistent prototype cache, volCache LRU cap,
+  1D bin-packing stick count for material estimates.
+- **Organic extras** — junction drip (metaball gravity bias), surface noise, style-specific
+  smooth curves, lumber depth-axis from catalog profiles.
+- `docs/ARCHITECTURE.md` and expanded test coverage (112 unit tests).
+
+### Changed
+
+- Export All Hubs now downloads a single ZIP instead of staggered individual STLs.
+- Auto-open inspector on first load is off by default (`autoOpenInspector`).
+- Manifold load failure toast now correctly mentions round + timber CSG.
+
 ## [1.7.0] - 2026-06-18
 
 ### Added

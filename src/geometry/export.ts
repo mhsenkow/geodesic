@@ -1,18 +1,23 @@
 import * as THREE from 'three';
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import pkg from '../../package.json';
 import type { AppSettings, HubType, DomeData, HubParams, StrutType } from '../types';
-import { createHub, orientGeometryForSTL } from './hub-geometry';
-import { analyzePrintability } from './printability';
+import { createHub, hubDirsFromVertex, orientGeometryForSTL } from './hub-geometry';
+import { analyzePrintability, estimatePlatePack } from './printability';
 import { validateStlGeometry } from './stl-validation';
+import { isManifoldReady } from './manifold-init';
+import { designJsonMeta } from '../storage/settings-schema';
 import { zipStore } from './zip';
 
 const stlExporter = new STLExporter();
+const gltfExporter = new GLTFExporter();
 
 export interface ExportResult {
   blob: Blob;
   filename: string;
   validation: ReturnType<typeof validateStlGeometry>;
+  blocked: boolean;
 }
 
 export interface Packed3mfResult {
@@ -22,54 +27,10 @@ export interface Packed3mfResult {
   warnings: string[];
 }
 
-export function exportHubStl(
-  htIdx: number,
-  hubTypes: HubType[],
-  dome: DomeData,
-  settings: AppSettings,
-  hubParams: HubParams
-): ExportResult | null {
-  if (!dome || htIdx == null || htIdx < 0 || htIdx >= hubTypes.length) return null;
-
-  const ht = hubTypes[htIdx];
-  const geo = createHub(ht.verts[0], dome, {
-    ...hubParams,
-    detail: Math.max(settings.detail, 64),
-    printFrame: true,
-    printFoot: hubParams.printFoot ?? true,
-    hubLabel: ht.label,
-    socketLabels: ht.dirs.map((_, i) => String(i + 1)),
-  });
-  if (!geo) return null;
-
-  const stlGeo = orientGeometryForSTL(geo);
-  const positions = stlGeo.attributes.position.array as Float32Array;
-  const validation = validateStlGeometry(positions);
-  validation.warnings.push(...analyzePrintability(stlGeo, hubParams).warnings);
-
-  const mesh = new THREE.Mesh(stlGeo, new THREE.MeshBasicMaterial());
-  const parsed = stlExporter.parse(mesh, { binary: true });
-  const blob = new Blob([parsed as BlobPart], { type: 'application/octet-stream' });
-  const matSuffix =
-    settings.matType === 'round' ? `${settings.rodD}mm` : 'timber';
-  const filename = `print_ready_hub_${ht.label}_${ht.val}way_V${settings.freq}_${matSuffix}.stl`;
-
-  geo.dispose();
-  stlGeo.dispose();
-
-  return { blob, filename, validation };
-}
-
-export function downloadBlob(blob: Blob, filename: string): void {
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
-export function downloadText(content: string, filename: string, mime = 'text/plain'): void {
-  downloadBlob(new Blob([content], { type: mime }), filename);
+export interface BatchExportProgress {
+  current: number;
+  total: number;
+  label: string;
 }
 
 function xml(s: string): string {
@@ -104,17 +65,162 @@ function geometryVolumeMm3(geo: THREE.BufferGeometry): number {
   return Math.abs(vol);
 }
 
+/** Deduplicated vertex index for smaller 3MF files. */
 function meshTo3mfXml(geo: THREE.BufferGeometry): string {
   const pos = geo.getAttribute('position') as THREE.BufferAttribute;
-  let vertices = '<vertices>';
-  for (let i = 0; i < pos.count; i++) {
-    vertices += `<vertex x="${pos.getX(i).toFixed(4)}" y="${pos.getY(i).toFixed(4)}" z="${pos.getZ(i).toFixed(4)}"/>`;
-  }
-  vertices += '</vertices><triangles>';
+  const vertMap = new Map<string, number>();
+  const verts: string[] = [];
+  const tris: string[] = [];
+  const q = (v: number) => v.toFixed(4);
+
+  const indexVert = (i: number): number => {
+    const key = `${q(pos.getX(i))},${q(pos.getY(i))},${q(pos.getZ(i))}`;
+    let idx = vertMap.get(key);
+    if (idx === undefined) {
+      idx = vertMap.size;
+      vertMap.set(key, idx);
+      verts.push(`<vertex x="${q(pos.getX(i))}" y="${q(pos.getY(i))}" z="${q(pos.getZ(i))}"/>`);
+    }
+    return idx;
+  };
+
   for (let i = 0; i < pos.count; i += 3) {
-    vertices += `<triangle v1="${i}" v2="${i + 1}" v3="${i + 2}"/>`;
+    tris.push(
+      `<triangle v1="${indexVert(i)}" v2="${indexVert(i + 1)}" v3="${indexVert(i + 2)}"/>`
+    );
   }
-  return `${vertices}</triangles>`;
+  return `<vertices>${verts.join('')}</vertices><triangles>${tris.join('')}</triangles>`;
+}
+
+function buildExportHubGeo(
+  ht: HubType,
+  dome: DomeData,
+  settings: AppSettings,
+  hubParams: HubParams,
+  emboss: boolean
+): THREE.BufferGeometry | null {
+  return createHub(ht.verts[0], dome, {
+    ...hubParams,
+    detail: Math.max(settings.detail, 64),
+    printFrame: true,
+    printFoot: hubParams.printFoot ?? true,
+    hubLabel: ht.label,
+    socketLabels: ht.dirs.map((_, i) => String(i + 1)),
+    embossLabels: emboss ? hubParams.embossLabels : false,
+    alignmentNotches: emboss ? hubParams.alignmentNotches : false,
+  });
+}
+
+export function exportHubStl(
+  htIdx: number,
+  hubTypes: HubType[],
+  dome: DomeData,
+  settings: AppSettings,
+  hubParams: HubParams,
+  options: { force?: boolean } = {}
+): ExportResult | null {
+  if (!dome || htIdx == null || htIdx < 0 || htIdx >= hubTypes.length) return null;
+  if (!isManifoldReady()) {
+    return {
+      blob: new Blob(),
+      filename: '',
+      validation: {
+        valid: false,
+        triangleCount: 0,
+        errors: ['Manifold CSG engine not loaded — export would use non-watertight fallback mesh.'],
+        warnings: [],
+      },
+      blocked: !options.force,
+    };
+  }
+
+  const ht = hubTypes[htIdx];
+  const geo = buildExportHubGeo(ht, dome, settings, hubParams, true);
+  if (!geo) return null;
+
+  const dirs = hubDirsFromVertex(dome, ht.verts[0]);
+  const stlGeo = orientGeometryForSTL(geo);
+  const positions = stlGeo.attributes.position.array as Float32Array;
+  const validation = validateStlGeometry(positions);
+  validation.warnings.push(...analyzePrintability(stlGeo, hubParams, dirs).warnings);
+
+  const blocked = validation.errors.length > 0 && !options.force;
+  if (blocked) {
+    geo.dispose();
+    stlGeo.dispose();
+    return { blob: new Blob(), filename: '', validation, blocked: true };
+  }
+
+  const mesh = new THREE.Mesh(stlGeo, new THREE.MeshBasicMaterial());
+  const parsed = stlExporter.parse(mesh, { binary: true });
+  const blob = new Blob([parsed as BlobPart], { type: 'application/octet-stream' });
+  const matSuffix = settings.matType === 'round' ? `${settings.rodD}mm` : 'timber';
+  const filename = `print_ready_hub_${ht.label}_${ht.val}way_V${settings.freq}_${matSuffix}.stl`;
+
+  geo.dispose();
+  stlGeo.dispose();
+
+  return { blob, filename, validation, blocked: false };
+}
+
+export async function exportAllHubsZip(
+  hubTypes: HubType[],
+  dome: DomeData,
+  settings: AppSettings,
+  hubParams: HubParams,
+  onProgress?: (p: BatchExportProgress) => void
+): Promise<{ blob: Blob; filename: string; warnings: string[] } | null> {
+  if (!dome || !hubTypes.length) return null;
+  const files: Array<{ path: string; data: string | Uint8Array }> = [];
+  const warnings: string[] = [];
+
+  for (let i = 0; i < hubTypes.length; i++) {
+    onProgress?.({ current: i + 1, total: hubTypes.length, label: hubTypes[i].label });
+    const result = exportHubStl(i, hubTypes, dome, settings, hubParams, { force: true });
+    if (!result || result.blocked) continue;
+    warnings.push(...result.validation.errors, ...result.validation.warnings);
+    const buf = new Uint8Array(await result.blob.arrayBuffer());
+    files.push({ path: result.filename, data: buf });
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  if (!files.length) return null;
+  const blob = zipStore(files);
+  return {
+    blob,
+    filename: `geodesic_hubs_V${settings.freq}_${settings.diam}m.zip`,
+    warnings,
+  };
+}
+
+export function exportHubGlb(
+  htIdx: number,
+  hubTypes: HubType[],
+  dome: DomeData,
+  settings: AppSettings,
+  hubParams: HubParams
+): Promise<{ blob: Blob; filename: string } | null> {
+  if (!dome || htIdx < 0 || htIdx >= hubTypes.length) return Promise.resolve(null);
+  const ht = hubTypes[htIdx];
+  const geo = buildExportHubGeo(ht, dome, settings, hubParams, true);
+  if (!geo) return Promise.resolve(null);
+
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: ht.color }));
+  return new Promise((resolve) => {
+    gltfExporter.parse(
+      mesh,
+      (result) => {
+        geo.dispose();
+        const data = result as ArrayBuffer;
+        resolve({
+          blob: new Blob([data], { type: 'model/gltf-binary' }),
+          filename: `hub_${ht.label}_${ht.val}way.glb`,
+        });
+      },
+      () => resolve(null),
+      { binary: true }
+    );
+  });
 }
 
 export function exportPackedBuildPlate3mf(
@@ -131,21 +237,16 @@ export function exportPackedBuildPlate3mf(
   const metadata: Array<Record<string, unknown>> = [];
   const warnings: string[] = [];
   const plateW = Math.max(60, settings.buildPlateW ?? 220);
+  const plateD = Math.max(60, settings.buildPlateD ?? 220);
   const padding = 10;
   let cursorX = padding;
   let cursorY = padding;
   let rowDepth = 0;
   let objectId = 1;
+  let hubFootprint = 40;
 
   for (const ht of hubTypes) {
-    const geo = createHub(ht.verts[0], dome, {
-      ...hubParams,
-      detail: Math.max(settings.detail, 64),
-      printFrame: true,
-      printFoot: hubParams.printFoot ?? true,
-      hubLabel: ht.label,
-      socketLabels: ht.dirs.map((_, i) => String(i + 1)),
-    });
+    const geo = buildExportHubGeo(ht, dome, settings, hubParams, true);
     if (!geo) continue;
 
     const stlGeo = orientGeometryForSTL(geo);
@@ -154,6 +255,7 @@ export function exportPackedBuildPlate3mf(
     const bb = nonIndexed.boundingBox!;
     const width = bb.max.x - bb.min.x;
     const depth = bb.max.y - bb.min.y;
+    hubFootprint = Math.max(hubFootprint, width, depth);
     if (cursorX + width + padding > plateW && cursorX > padding) {
       cursorX = padding;
       cursorY += rowDepth + padding;
@@ -164,8 +266,9 @@ export function exportPackedBuildPlate3mf(
     rowDepth = Math.max(rowDepth, depth);
     cursorX += width + padding;
 
+    const dirs = hubDirsFromVertex(dome, ht.verts[0]);
     const validation = validateStlGeometry(nonIndexed.attributes.position.array as Float32Array);
-    const print = analyzePrintability(nonIndexed, hubParams);
+    const print = analyzePrintability(nonIndexed, hubParams, dirs);
     warnings.push(...validation.errors, ...validation.warnings, ...print.warnings);
     const volumeCm3 = geometryVolumeMm3(nonIndexed) / 1000;
     objects.push(
@@ -175,9 +278,15 @@ export function exportPackedBuildPlate3mf(
         `<metadata name="geodesic:valence">${ht.val}</metadata>` +
         `<metadata name="geodesic:volume_cm3">${volumeCm3.toFixed(3)}</metadata>` +
         `<mesh>${meshTo3mfXml(nonIndexed)}</mesh>` +
-      `</object>`
+        `</object>`
     );
-    items.push(`<item objectid="${objectId}" transform="1 0 0 0 1 0 0 0 1 ${tx.toFixed(3)} ${ty.toFixed(3)} 0"/>`);
+    for (let q = 0; q < ht.verts.length; q++) {
+      const qx = tx + (q % 3) * 2;
+      const qy = ty + Math.floor(q / 3) * 2;
+      items.push(
+        `<item objectid="${objectId}" transform="1 0 0 0 1 0 0 0 1 ${qx.toFixed(3)} ${qy.toFixed(3)} 0"/>`
+      );
+    }
     metadata.push({
       id: objectId,
       label: ht.label,
@@ -194,14 +303,11 @@ export function exportPackedBuildPlate3mf(
   }
 
   if (!objects.length) return null;
-  const usedDepth = cursorY + rowDepth + padding;
-  if (usedDepth > Math.max(60, settings.buildPlateD ?? 220)) {
-    warnings.push(`Packed hub types need about ${usedDepth.toFixed(0)} mm of plate depth.`);
-  }
+  const pack = estimatePlatePack(hubTypes, plateW, plateD, hubFootprint);
+  warnings.push(...pack.warnings);
 
   const manifest = {
-    app: 'Geodesic Hub Generator',
-    version: pkg.version,
+    ...designJsonMeta(),
     generatedAt: new Date().toISOString(),
     settings,
     struts: strutTypes,
@@ -239,8 +345,7 @@ export function exportPackedBuildPlate3mf(
     { path: 'Metadata/geodesic-manifest.json', data: JSON.stringify(manifest, null, 2) },
   ]);
 
-  const filename = `geodesic_hub_plate_V${settings.freq}_${settings.diam}m.3mf`;
-  return { blob, filename, manifest, warnings };
+  return { blob, filename: `geodesic_hub_plate_V${settings.freq}_${settings.diam}m.3mf`, manifest, warnings };
 }
 
 export function designJson(
@@ -250,8 +355,7 @@ export function designJson(
 ): string {
   return JSON.stringify(
     {
-      app: 'Geodesic Hub Generator',
-      version: pkg.version,
+      ...designJsonMeta(),
       exportedAt: new Date().toISOString(),
       settings,
       hubs: hubTypes.map((h) => ({
@@ -266,4 +370,57 @@ export function designJson(
     null,
     2
   );
+}
+
+export function bomCsv(
+  settings: AppSettings,
+  hubTypes: HubType[],
+  strutTypes: StrutType[],
+  estimate: {
+    sticksNeeded: number;
+    printMassG: number;
+    filamentLengthM: number;
+    totalCost: number;
+    stockCost: number;
+    printCost: number;
+  }
+): string {
+  const rows = [
+    'category,label,quantity,unit,notes',
+    ...hubTypes.map(
+      (h) => `hub,${h.label},${h.verts.length},each,${h.val}-way${h.isBase ? ' base' : ''}`
+    ),
+    ...strutTypes.map((s) => `strut,${s.label},${s.count},each,${s.length.toFixed(4)} m`),
+    `stock,linear sticks,${estimate.sticksNeeded},sticks,${settings.stockLength} m each`,
+    `filament,PLA/PETG,${estimate.printMassG.toFixed(0)},g,~${estimate.filamentLengthM.toFixed(1)} m`,
+    `cost,total,${estimate.totalCost.toFixed(2)},${settings.currencySymbol},stock ${estimate.stockCost.toFixed(2)} + print ${estimate.printCost.toFixed(2)}`,
+  ];
+  return rows.join('\n');
+}
+
+export function vertexCoordsCsv(dome: DomeData, hubTypes: HubType[]): string {
+  const vertexHub = new Map<number, string>();
+  for (const ht of hubTypes) {
+    for (const vi of ht.verts) vertexHub.set(vi, ht.label);
+  }
+  const rows = ['vertex_index,x,y,z,hub_label,is_base,is_door'];
+  for (let i = 0; i < dome.verts.length; i++) {
+    const v = dome.verts[i];
+    rows.push(
+      `${i},${v[0].toFixed(6)},${v[1].toFixed(6)},${v[2].toFixed(6)},${vertexHub.get(i) ?? ''},${dome.isBase[i]},${dome.isDoor[i]}`
+    );
+  }
+  return rows.join('\n');
+}
+
+export function downloadBlob(blob: Blob, filename: string): void {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+export function downloadText(content: string, filename: string, mime = 'text/plain'): void {
+  downloadBlob(new Blob([content], { type: mime }), filename);
 }

@@ -69,8 +69,11 @@ export interface TimberDims {
 
 export function timberDims(p: HubParams): TimberDims {
   const tol = socketTolerances(p);
-  const innerW = p.lumW + tol.x * 2;
-  const innerH = p.lumH + tol.y * 2;
+  let lumW = p.lumW;
+  let lumH = p.lumH;
+  if (p.lumberDepthAxis === 'width') [lumW, lumH] = [p.lumH, p.lumW];
+  const innerW = lumW + tol.x * 2;
+  const innerH = lumH + tol.y * 2;
   const wall = Math.max(2.5, p.wall);
   const outerW = innerW + wall * 2;
   const outerH = innerH + wall * 2;

@@ -41,6 +41,11 @@ export interface MetaballOptions {
  * "positive-inside" field and the union is a smooth max (which bulges
  * material outward where struts meet — the molten metaball look).
  */
+function smoothStep01(t: number): number {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * (3 - 2 * x);
+}
+
 function smax(a: number, b: number, k: number): number {
   if (k <= EPS) return Math.max(a, b);
   const h = Math.max(k - Math.abs(a - b), 0) / k;
@@ -91,7 +96,7 @@ function metaDims(dirs: THREE.Vector3[], p: HubParams): MetaDims {
       strutLen,
       voidInset: p.boreThrough ? 0 : Math.max(strutLen - boreDep, strutLen * 0.32),
       // blend radius scales with strut size; more smooth → fatter molten joins
-      k: oR * (0.35 + t * 1.7),
+      k: oR * (0.38 + t * 1.85),
       feature: oR,
     };
   }
@@ -110,7 +115,7 @@ function metaDims(dirs: THREE.Vector3[], p: HubParams): MetaDims {
     tipR: Math.max(strutR * taper, Math.hypot(d.innerW, d.innerH) / 2 + 1.5),
     strutLen: d.socketLen,
     voidInset: p.boreThrough ? Math.max(2, d.wall) : timberVoidInset(d, p, dirs),
-    k: halfDiag * (0.3 + t * 1.5),
+    k: halfDiag * (0.32 + t * 1.62),
     feature: halfDiag,
     timber: d,
   };
@@ -121,8 +126,27 @@ function levelSetEdge(m: MetaDims, opts: MetaballOptions, p: HubParams): number 
   // Detail nudges resolution, but the grid must always resolve the strut radius
   // or levelSet can pinch a strut off into a second component.
   const q = THREE.MathUtils.clamp(48 / detail, 0.7, 1.5);
-  const base = (opts.preview ? 0.34 : 0.2) * m.feature * q;
-  return THREE.MathUtils.clamp(base, m.feature * 0.16, m.feature * 0.36);
+  const subd = !opts.preview && p.meshSubdivide ? 0.72 : 1;
+  const previewScale = opts.preview ? 1.45 : 1;
+  const base = (opts.preview ? 0.38 : 0.18) * m.feature * q * subd * previewScale;
+  return THREE.MathUtils.clamp(base, m.feature * 0.14, m.feature * 0.34);
+}
+
+/** Weaverbird-like tangent polish on the SDF shell before socket booleans. */
+function polishMetaballShell(
+  shell: Manifold,
+  m: MetaDims,
+  opts: MetaballOptions,
+  p: HubParams
+): Manifold {
+  const t = THREE.MathUtils.clamp(p.surfaceSmooth ?? 0.6, 0, 1);
+  if (t < 0.05) return shell;
+  const minSharpAngle = THREE.MathUtils.clamp(52 + t * 42, 48, 120);
+  const minSmoothness = THREE.MathUtils.clamp(0.1 + t * 0.58, 0.04, 0.88);
+  const edge = levelSetEdge(m, opts, p) * (opts.preview ? 1.05 : 0.78);
+  return shell
+    .smoothOut(minSharpAngle, minSmoothness)
+    .refineToLength(THREE.MathUtils.clamp(edge, m.feature * 0.12, m.feature * 0.32));
 }
 
 function alignZ(mfd: Manifold, dir: THREE.Vector3): Manifold {
@@ -144,6 +168,10 @@ function buildMetaballShell(dirs: THREE.Vector3[], m: MetaDims, opts: MetaballOp
     const py = point[1];
     const pz = point[2];
     let d = nodeR - Math.sqrt(px * px + py * py + pz * pz);
+    const drip = THREE.MathUtils.clamp(p.junctionDrip ?? 0, 0, 1);
+    if (drip > 0.01 && py < -nodeR * 0.15) {
+      d += drip * nodeR * 0.12 * smoothStep01(-py / nodeR);
+    }
     for (let i = 0; i < ends.length; i++) {
       const bx = ends[i].x;
       const by = ends[i].y;
@@ -254,7 +282,7 @@ export function buildMetaballHubSolid(
   opts: MetaballOptions = {}
 ): Manifold {
   const m = metaDims(dirs, p);
-  const shell = buildMetaballShell(dirs, m, opts, p);
+  const shell = polishMetaballShell(buildMetaballShell(dirs, m, opts, p), m, opts, p);
   if (!dirs.length) return shell;
   return subtractInterior(shell, dirs, m, p);
 }

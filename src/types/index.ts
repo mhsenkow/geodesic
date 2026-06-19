@@ -1,5 +1,7 @@
 export type MaterialType = 'round' | 'rect';
-export type HubStyle = 'sharp' | 'organic' | 'metaball';
+export type HubStyle = 'sharp' | 'organic' | 'metaball' | 'hybrid';
+export type PreviewQuality = 'fast' | 'balanced' | 'full';
+export type NozzlePreset = '0.2' | '0.4' | '0.6' | '0.8';
 export type UnitSystem = 'metric' | 'imperial';
 export type BaseSolid = 'icosahedron' | 'octahedron' | 'tetrahedron';
 export type GeoTopology = 'geodesic' | 'goldberg';
@@ -117,6 +119,20 @@ export interface AppSettings {
   showOverhangHeatmap: boolean;
   buildPlateW: number;
   buildPlateD: number;
+  /** Dome preview mesh quality — export always uses high detail. */
+  previewQuality: PreviewQuality;
+  filamentDiameterMm: number;
+  currencySymbol: string;
+  /** 0–1 organic/metaball blend when hubStyle is hybrid. */
+  hubStyleBlend: number;
+  /** Gravity-biased junction bulge on lower arms. */
+  junctionDrip: number;
+  /** Subtle surface displacement for coral presets. */
+  surfaceNoise: number;
+  treeSupportBase: boolean;
+  embossPreview: boolean;
+  autoOpenInspector: boolean;
+  nozzlePreset: NozzlePreset;
 }
 
 export interface HubParams {
@@ -166,6 +182,13 @@ export interface HubParams {
   showOverhangHeatmap?: boolean;
   hubLabel?: string;
   socketLabels?: string[];
+  /** Which lumber face inserts along the socket axis. */
+  lumberDepthAxis?: 'width' | 'height';
+  junctionDrip?: number;
+  surfaceNoise?: number;
+  hubStyleBlend?: number;
+  treeSupportBase?: boolean;
+  previewQuality?: PreviewQuality;
 }
 
 export interface StlValidationResult {
@@ -246,6 +269,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showOverhangHeatmap: false,
   buildPlateW: 220,
   buildPlateD: 220,
+  previewQuality: 'balanced',
+  filamentDiameterMm: 1.75,
+  currencySymbol: '$',
+  hubStyleBlend: 0,
+  junctionDrip: 0,
+  surfaceNoise: 0,
+  treeSupportBase: false,
+  embossPreview: false,
+  autoOpenInspector: false,
+  nozzlePreset: '0.4',
 };
 
 export const DOME_RADIUS = 5;

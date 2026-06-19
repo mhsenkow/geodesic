@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { AppSettings, DomeData, HubParams, HubType } from '../types';
 import { HUB_COLORS } from '../types';
 import { disposeObject, previewHubScale } from '../geometry/hub-geometry';
-import { buildHubInstance, clearHubPrototypeCache } from '../geometry/hub-prototype';
+import { buildHubInstance, noteHubParamsFingerprint } from '../geometry/hub-prototype';
 
 export class MainScene {
   readonly scene = new THREE.Scene();
@@ -99,21 +99,24 @@ export class MainScene {
     }
 
     if (settings.showHubs) {
-      // Dome preview: build one Manifold hub per hub-type, then instantiate each
-      // copy by rotation — CSG runs ~(hub-type count) times, not per vertex.
+      noteHubParamsFingerprint(hubParams);
+      const quality = settings.previewQuality ?? 'balanced';
+      const detailCap = quality === 'fast' ? 24 : quality === 'full' ? hubParams.detail : Math.min(hubParams.detail, 36);
       const hp: HubParams = {
         ...hubParams,
-        detail: Math.min(hubParams.detail, 36),
+        detail: detailCap,
         domePreview: true,
         printFrame: false,
         printFoot: false,
+        embossLabels: false,
+        alignmentNotches: false,
       };
       const hvs = previewHubScale(hp);
+      const maxHubs = quality === 'fast' ? 60 : quality === 'balanced' ? 150 : 400;
       const rendered = new Set<number>();
-      clearHubPrototypeCache();
       for (const ht of hubTypes) {
         for (const vi of ht.verts) {
-          if (rendered.size > 150) break;
+          if (rendered.size >= maxHubs) break;
           let hg: THREE.BufferGeometry | null;
           try {
             hg = buildHubInstance(ht, dome, vi, hp, hvs);
@@ -130,6 +133,18 @@ export class MainScene {
           this.domeGroup.add(mesh);
           rendered.add(vi);
           this.markerMeshes.push(mesh);
+        }
+      }
+      if (rendered.size < dome.verts.length && settings.showMarkers) {
+        const mg = new THREE.SphereGeometry(0.1, 8, 8);
+        for (let i = 0; i < dome.verts.length; i++) {
+          if (rendered.has(i)) continue;
+          const val = dome.adj[i].length;
+          const m = new THREE.Mesh(mg, new THREE.MeshStandardMaterial({ color: HUB_COLORS[val] || 0x888888 }));
+          m.position.set(...(dome.verts[i] as [number, number, number]));
+          m.userData.vidx = i;
+          this.domeGroup.add(m);
+          this.markerMeshes.push(m);
         }
       }
     }

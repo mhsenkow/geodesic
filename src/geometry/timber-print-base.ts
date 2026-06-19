@@ -65,6 +65,12 @@ export function unionPrintBase(hub: Manifold, p: HubParams): Manifold {
     plate = Manifold.difference(plate, vent.translate(0, 0, -EPS));
   }
 
+  if (p.treeSupportBase) {
+    const treeR = base.bottomRadius * 1.04;
+    const tree = Manifold.cylinder(Math.max(0.6, base.thickness * 0.25), treeR, base.bottomRadius, segs, false);
+    plate = Manifold.union(plate, tree);
+  }
+
   const rot = transformManifold(plate, new THREE.Matrix4().makeRotationX(Math.PI / 2));
   const topY = trimY + base.weldOverlap * 0.25;
   const welded = rot.translate(0, topY - totalH, 0);

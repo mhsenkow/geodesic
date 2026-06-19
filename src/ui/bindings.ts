@@ -1,7 +1,8 @@
 import type { GeodesicApp } from './app';
 import type { HubStyle, UnitSystem } from '../types';
 import { PRESETS } from '../presets';
-import { clearSettings } from '../storage/settings';
+import { debounce } from '../utils/debounce';
+import { clearSettings, loadCustomPresets } from '../storage/settings';
 import {
   readDistanceInput,
   readSmallInput,
@@ -11,9 +12,19 @@ import {
 import { refreshChipStates } from './material-panel';
 
 export function bindUi(app: GeodesicApp): void {
+  const debouncedBuild = debounce(() => void app.buildDome(false), 280);
+
   document.querySelectorAll('.section-header').forEach((header) => {
-    header.addEventListener('click', () => {
-      header.parentElement?.classList.toggle('collapsed');
+    const btn = header as HTMLElement;
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('tabindex', '0');
+    const toggle = () => header.parentElement?.classList.toggle('collapsed');
+    btn.addEventListener('click', toggle);
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
     });
   });
 
@@ -23,11 +34,26 @@ export function bindUi(app: GeodesicApp): void {
       const opt = document.createElement('option');
       opt.value = p.id;
       opt.textContent = p.name;
+      opt.title = p.description;
+      presetSelect.appendChild(opt);
+    });
+    loadCustomPresets().forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `★ ${p.name}`;
+      opt.title = p.description;
       presetSelect.appendChild(opt);
     });
     presetSelect.addEventListener('change', (e) => {
       const id = (e.target as HTMLSelectElement).value;
-      if (id) app.applyPreset(id);
+      if (id.startsWith('custom-')) {
+        const cp = loadCustomPresets().find((p) => p.id === id);
+        if (cp) {
+          app.settings = { ...app.settings, ...cp.settings, presetId: id };
+          app.syncFormFromSettings();
+          void app.buildDome(false);
+        }
+      } else if (id) app.applyPreset(id);
     });
   }
 
@@ -184,6 +210,7 @@ export function bindUi(app: GeodesicApp): void {
   document.getElementById('frequency')?.addEventListener('input', (e) => {
     app.settings.freq = +(e.target as HTMLInputElement).value;
     document.getElementById('freq-val')!.textContent = `V${app.settings.freq}`;
+    debouncedBuild();
   });
   document.getElementById('frequency')?.addEventListener('change', () => {
     void app.buildDome(false);
@@ -239,6 +266,49 @@ export function bindUi(app: GeodesicApp): void {
     app.settings.door = (e.target as HTMLInputElement).checked;
     app.syncFormFromSettings();
     void app.buildDome(false);
+  });
+
+  document.getElementById('flat-base')?.addEventListener('change', (e) => {
+    app.settings.flatBot = (e.target as HTMLInputElement).checked;
+    void app.buildDome(false);
+    app.persist();
+  });
+
+  document.getElementById('preview-quality')?.addEventListener('change', (e) => {
+    app.settings.previewQuality = (e.target as HTMLSelectElement).value as typeof app.settings.previewQuality;
+    void app.buildDome(false);
+    app.persist();
+  });
+
+  document.getElementById('nozzle-preset')?.addEventListener('change', (e) => {
+    const preset = (e.target as HTMLSelectElement).value as typeof app.settings.nozzlePreset;
+    app.settings.nozzlePreset = preset;
+    app.settings.nozzleDia = { '0.2': 0.2, '0.4': 0.4, '0.6': 0.6, '0.8': 0.8 }[preset] ?? 0.4;
+    app.updateInspector();
+    app.persist();
+  });
+
+  ([
+    ['tree-support-base', 'treeSupportBase'],
+    ['emboss-preview', 'embossPreview'],
+    ['auto-open-inspector', 'autoOpenInspector'],
+  ] as const).forEach(([id, key]) => {
+    document.getElementById(id)?.addEventListener('change', (e) => {
+      app.settings[key] = (e.target as HTMLInputElement).checked;
+      app.updateInspector();
+      app.persist();
+    });
+  });
+
+  (['junction-drip', 'surface-noise'] as const).forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', (e) => {
+      const val = +(e.target as HTMLInputElement).value;
+      if (id === 'junction-drip') app.settings.junctionDrip = val;
+      else app.settings.surfaceNoise = val;
+      app.updateInspector();
+      debouncedBuild();
+      app.persist();
+    });
   });
 
   document.querySelectorAll('input[name="matType"]').forEach((r) =>
@@ -457,11 +527,23 @@ export function bindUi(app: GeodesicApp): void {
   });
 
   document.getElementById('btn-export-hub')?.addEventListener('click', () => void app.exportSelectedHub());
+  document.getElementById('btn-export-glb')?.addEventListener('click', () => void app.exportSelectedGlb());
   document.getElementById('btn-export-all')?.addEventListener('click', () => void app.exportAllHubs());
   document.getElementById('btn-export-plate')?.addEventListener('click', () => void app.exportBuildPlate3mf());
   document.getElementById('btn-export-struts')?.addEventListener('click', () => app.exportStrutTable());
   document.getElementById('btn-export-map')?.addEventListener('click', () => app.exportHubMap());
   document.getElementById('btn-export-design')?.addEventListener('click', () => app.exportDesignJson());
+  document.getElementById('btn-import-design')?.addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (file) app.importDesignFromFile(file);
+  });
+  document.getElementById('btn-export-bom')?.addEventListener('click', () => app.exportBom());
+  document.getElementById('btn-export-vertices')?.addEventListener('click', () => app.exportVertexCoords());
+  document.getElementById('btn-save-preset')?.addEventListener('click', () => app.saveCustomPreset());
+  document.getElementById('btn-revert-inspector')?.addEventListener('click', () => app.revertInspectorSettings());
+  document.getElementById('btn-keyboard-help')?.addEventListener('click', () => {
+    document.getElementById('keyboard-help')?.classList.toggle('visible');
+  });
   document.getElementById('btn-copy-share')?.addEventListener('click', () => void app.copyShareUrl());
   document.getElementById('btn-open-inspector')?.addEventListener('click', () =>
     app.openInspector(app.settings.selHub ?? 0)

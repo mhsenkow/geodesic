@@ -86,6 +86,31 @@ describe('luscious hub options stay watertight', () => {
     expect(v.warnings).toHaveLength(0);
   });
 
+  it('embossed labels and notches stay watertight', () => {
+    const v = watertight({
+      ...base,
+      embossLabels: true,
+      alignmentNotches: true,
+      hubLabel: 'A3',
+      socketLabels: ['1', '2', '3', '4', '5'],
+    });
+    expect(v.errors).toHaveLength(0);
+    expect(v.warnings).toHaveLength(0);
+  });
+
+  it('embossed metaball export stays watertight', () => {
+    const v = watertight({
+      ...base,
+      hubStyle: 'metaball',
+      surfaceSmooth: 0.85,
+      embossLabels: true,
+      alignmentNotches: true,
+      hubLabel: 'M5',
+    });
+    expect(v.errors).toHaveLength(0);
+    expect(v.warnings).toHaveLength(0);
+  });
+
   it('goldberg buckyball 3-way hubs export closed', () => {
     const dual = dualizeSphere(genSphere(3, DOME_RADIUS, 'icosahedron'));
     const dome = truncDome(dual, 0.625, DOME_RADIUS, true, false, 2, 4);

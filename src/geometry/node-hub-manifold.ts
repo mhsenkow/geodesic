@@ -18,6 +18,7 @@ import {
   socketLengthFromSettings,
   socketTolerances,
 } from './socket-fit';
+import { styleSmoothScale } from './smooth-curves';
 
 /* ------------------------------------------------------------------ *
  * Organic Manifold hub engine.
@@ -49,14 +50,15 @@ interface SmoothPlan {
 function smoothPlan(p: HubParams, baseSharpAngle: number): SmoothPlan {
   const t = THREE.MathUtils.clamp(p.surfaceSmooth ?? 0.55, 0, 1);
   const conn = THREE.MathUtils.clamp(p.subdConnectionLength ?? 0, 0, 3);
+  const styleScale = styleSmoothScale(p.hubStyle, t);
   // More smoothing → fold more edges into the blend (higher angle threshold)
   // and add a larger fillet to the edges that stay sharp.
   const minSharpAngle = THREE.MathUtils.clamp(
-    baseSharpAngle + t * 32 - conn * 9,
-    42,
+    baseSharpAngle + t * 34 - conn * 9,
+    40,
     120
   );
-  const minSmoothness = THREE.MathUtils.clamp(0.12 + t * 0.7 - conn * 0.12, 0, 1);
+  const minSmoothness = THREE.MathUtils.clamp(0.14 + styleScale * 0.78 - conn * 0.12, 0, 1);
   return { minSharpAngle, minSmoothness };
 }
 

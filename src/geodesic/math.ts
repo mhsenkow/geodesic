@@ -301,11 +301,24 @@ export function computeStrutTypes(d: DomeData, scaleToMeters: number): StrutType
     }));
 }
 
-export function strutTableCsv(struts: StrutType[], materialLabel: string): string {
-  const rows = [
-    'label,length_m,count,material',
-    ...struts.map((s) => `${s.label},${s.length.toFixed(4)},${s.count},${materialLabel}`),
-  ];
+export function strutTableCsv(
+  struts: StrutType[],
+  materialLabel: string,
+  dome?: DomeData,
+  hubTypes?: HubType[]
+): string {
+  const header = dome
+    ? 'label,length_m,count,material,cut_priority,hub_a,hub_b'
+    : 'label,length_m,count,material,cut_priority';
+  const rows = [header];
+  struts.forEach((s, i) => {
+    const priority = i + 1;
+    if (dome && hubTypes) {
+      rows.push(`${s.label},${s.length.toFixed(4)},${s.count},${materialLabel},${priority},,`);
+    } else {
+      rows.push(`${s.label},${s.length.toFixed(4)},${s.count},${materialLabel},${priority}`);
+    }
+  });
   return rows.join('\n');
 }
 

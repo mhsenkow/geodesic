@@ -3,22 +3,34 @@ import type { DomeData, HubParams, HubType } from '../types';
 import { alignmentQuat } from './hub-orient';
 import { createHubFromDirs, hubDirsFromVertex } from './hub-geometry';
 
+import { hubParamsFingerprint, hubTypeFingerprint } from '../utils/cache-key';
+
 const protoCache = new Map<string, THREE.BufferGeometry>();
 const instanceCache = new Map<string, THREE.BufferGeometry>();
+let lastParamsFingerprint = '';
 
 function paramsFingerprint(p: HubParams): string {
-  return JSON.stringify(p);
+  return hubParamsFingerprint(p);
 }
 
 function hubTypeKey(ht: HubType, p: HubParams): string {
-  return `${ht.val}:${ht.angs.join(',')}:${ht.isBase}:${paramsFingerprint(p)}`;
+  return hubTypeFingerprint(ht, p);
 }
 
-export function clearHubPrototypeCache(): void {
+export function clearHubPrototypeCache(force = true): void {
+  if (!force && lastParamsFingerprint) return;
   for (const g of protoCache.values()) g.dispose();
   for (const g of instanceCache.values()) g.dispose();
   protoCache.clear();
   instanceCache.clear();
+}
+
+export function noteHubParamsFingerprint(p: HubParams): void {
+  const fp = paramsFingerprint(p);
+  if (lastParamsFingerprint && lastParamsFingerprint !== fp) {
+    clearHubPrototypeCache(true);
+  }
+  lastParamsFingerprint = fp;
 }
 
 export function getHubPrototype(ht: HubType, p: HubParams): THREE.BufferGeometry {

@@ -13,13 +13,20 @@ import {
   designJson,
   exportHubStl,
   exportPackedBuildPlate3mf,
+  exportAllHubsZip,
+  exportHubGlb,
+  bomCsv,
+  vertexCoordsCsv,
   downloadBlob,
   downloadText,
 } from '../geometry/export';
-import { analyzePrintability } from '../geometry/printability';
+import { importDesignJson, addCustomPreset, loadCustomPresets } from '../storage/settings';
+import { analyzePrintability, estimatePlatePack, nozzleFromPreset } from '../geometry/printability';
+import { analyzeFitChecks } from '../geometry/fit-checks';
+import { hubDirsFromVertex } from '../geometry/hub-geometry';
 import { validateStlGeometry } from '../geometry/stl-validation';
 import { generateHubMapSvg } from '../guides/hub-map';
-import { estimateMaterial, meshVolumeMm3 } from '../guides/material';
+import { estimateMaterial, meshVolumeMm3, clearVolCache } from '../guides/material';
 import { renderCutList, renderMaterialEstimate, refreshChipStates } from './material-panel';
 import { loadSettings, saveSettings, settingsShareHash } from '../storage/settings';
 import { getPreset } from '../presets';
@@ -55,6 +62,8 @@ export class GeodesicApp {
   private mDown = new THREE.Vector2();
   private wasDrag = false;
   private animId = 0;
+  private inspectorSnapshot: AppSettings | null = null;
+  private inspectorPaused = false;
 
   constructor() {
     this.settings = loadSettings();
@@ -73,6 +82,7 @@ export class GeodesicApp {
   }
 
   hubParams(): HubParams {
+    const profile = getMaterialProfile(this.settings.materialStockId);
     return {
       matType: this.settings.matType,
       rodD: this.settings.rodD,
@@ -103,7 +113,7 @@ export class GeodesicApp {
       strutTaper: this.settings.strutTaper,
       boreThrough: this.settings.boreThrough,
       baseVent: this.settings.baseVent,
-      nozzleDia: this.settings.nozzleDia,
+      nozzleDia: nozzleFromPreset(this.settings.nozzlePreset, this.settings.nozzleDia),
       frictionRibs: this.settings.frictionRibs,
       ribDepth: this.settings.ribDepth,
       ribCount: this.settings.ribCount,
@@ -111,6 +121,12 @@ export class GeodesicApp {
       embossLabels: this.settings.embossLabels,
       alignmentNotches: this.settings.alignmentNotches,
       showOverhangHeatmap: this.settings.showOverhangHeatmap,
+      lumberDepthAxis: profile?.lumberDepthAxis,
+      junctionDrip: this.settings.junctionDrip,
+      surfaceNoise: this.settings.surfaceNoise,
+      hubStyleBlend: this.settings.hubStyleBlend,
+      treeSupportBase: this.settings.treeSupportBase,
+      previewQuality: this.settings.previewQuality,
     };
   }
 
@@ -144,7 +160,7 @@ export class GeodesicApp {
       this.updateHubList();
       this.updateMaterialPanels();
 
-      if (showAutoInspector && !this.settings.inspectorOpen && this.hubTypes.length > 0) {
+      if (this.settings.autoOpenInspector && showAutoInspector && !this.settings.inspectorOpen && this.hubTypes.length > 0) {
         this.openInspector(0, false);
       } else if (this.settings.inspectorOpen) {
         this.updateInspector();
@@ -170,6 +186,7 @@ export class GeodesicApp {
 
   openInspector(htIdx: number, persist = true): void {
     if (htIdx == null || htIdx < 0 || htIdx >= this.hubTypes.length) return;
+    if (!this.inspectorSnapshot) this.inspectorSnapshot = { ...this.settings };
     this.settings.selHub = htIdx;
     this.settings.inspectorOpen = true;
     document.getElementById('hub-inspector')?.classList.add('visible');
@@ -178,11 +195,45 @@ export class GeodesicApp {
     if (persist) this.persist();
   }
 
+  revertInspectorSettings(): void {
+    if (!this.inspectorSnapshot) return;
+    this.settings = { ...this.inspectorSnapshot, selHub: this.settings.selHub, inspectorOpen: true };
+    this.syncFormFromSettings();
+    clearVolCache();
+    void this.buildDome(false);
+    this.updateInspector();
+    showToast('Inspector settings reverted.', 'info');
+  }
+
+  saveCustomPreset(): void {
+    const name = prompt('Preset name?');
+    if (!name?.trim()) return;
+    addCustomPreset(name.trim(), 'Custom saved preset', this.settings);
+    showToast(`Saved preset “${name.trim()}”.`, 'success');
+  }
+
+  importDesignFromFile(file: File): void {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        this.settings = importDesignJson(String(reader.result));
+        this.syncFormFromSettings();
+        clearVolCache();
+        void this.buildDome(false);
+        showToast('Design imported.', 'success');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Invalid design JSON.', 'error');
+      }
+    };
+    reader.readAsText(file);
+  }
+
   closeInspector(): void {
     document.getElementById('hub-inspector')?.classList.remove('visible');
     this.settings.selHub = null;
     this.settings.inspectorOpen = false;
     this.inspector.clear();
+    this.inspectorSnapshot = null;
     this.updateHubList();
     this.persist();
   }
@@ -190,7 +241,11 @@ export class GeodesicApp {
   updateInspector(): void {
     if (this.settings.selHub == null || !this.dome) return;
     const ht = this.hubTypes[this.settings.selHub];
-    const geo = this.inspector.update(ht, this.dome, this.settings, this.hubParams());
+    const geo = this.inspector.update(ht, this.dome, this.settings, {
+      ...this.hubParams(),
+      embossLabels: this.settings.embossPreview || this.settings.embossLabels,
+      alignmentNotches: this.settings.embossPreview || this.settings.alignmentNotches,
+    });
     if (!geo) return;
 
     const badge = document.getElementById('insp-badge');
@@ -220,7 +275,10 @@ export class GeodesicApp {
       const nonIndexed = geo.index ? geo.toNonIndexed() : geo;
       const validation = validateStlGeometry(nonIndexed.attributes.position.array as Float32Array);
       if (nonIndexed !== geo) nonIndexed.dispose();
-      const report = analyzePrintability(geo, this.hubParams());
+      const dirs = hubDirsFromVertex(this.dome, ht.verts[0]).map((d) => d.clone());
+      const report = analyzePrintability(geo, this.hubParams(), dirs);
+      const fit = analyzeFitChecks(geo, dirs, this.hubParams());
+      const plate = estimatePlatePack(this.hubTypes, this.settings.buildPlateW, this.settings.buildPlateD, 45);
       addBadge(validation.errors.length ? 'error' : validation.warnings.length ? 'warn' : 'ok', 'Watertight', [
         ...validation.errors,
         ...validation.warnings,
@@ -240,6 +298,13 @@ export class GeodesicApp {
         `Edge ${report.maxEdgeMm.toFixed(1)}mm`,
         `Target max edge: ${report.targetEdgeMm.toFixed(1)}mm`
       );
+      addBadge(plate.plateFits ? 'ok' : 'warn', 'Plate pack', plate.warnings.join(' ') || 'Fits build plate.');
+      if (report.supportMaterialPct > 5) {
+        addBadge('warn', `Support ~${report.supportMaterialPct.toFixed(0)}%`, `~${report.supportVolumeCm3.toFixed(1)} cm³ support material est.`);
+      }
+      if (fit.suggestedPrintUp && !this.settings.printUpOverride) {
+        addBadge('ok', 'Print-up hint', `Try [${fit.suggestedPrintUp.map((v) => v.toFixed(2)).join(', ')}]`);
+      }
     }
 
     const angDiv = document.getElementById('insp-angles');
@@ -283,6 +348,10 @@ export class GeodesicApp {
         showToast('Export failed — no geometry generated.', 'error');
         return;
       }
+      if (result.blocked) {
+        showToast(`Export blocked: ${result.validation.errors.join(' ')}`, 'error', 8000);
+        return;
+      }
       if (!result.validation.valid || result.validation.warnings.length) {
         const msg = [
           ...result.validation.errors,
@@ -298,13 +367,21 @@ export class GeodesicApp {
 
   async exportAllHubs(): Promise<void> {
     if (!this.dome) return;
-    showToast(`Exporting ${this.hubTypes.length} hub types…`, 'info');
-    for (let i = 0; i < this.hubTypes.length; i++) {
-      await new Promise((r) => setTimeout(r, i * 400));
-      const result = exportHubStl(i, this.hubTypes, this.dome, this.settings, this.hubParams());
-      if (result) downloadBlob(result.blob, result.filename);
-    }
-    showToast('All hubs exported.', 'success');
+    await withLoading(async () => {
+      const result = await exportAllHubsZip(
+        this.hubTypes,
+        this.dome!,
+        this.settings,
+        this.hubParams(),
+        (p) => showToast(`Exporting ${p.label} (${p.current}/${p.total})…`, 'info', 1200)
+      );
+      if (!result) {
+        showToast('Batch export failed.', 'error');
+        return;
+      }
+      downloadBlob(result.blob, result.filename);
+      showToast(`Exported ${result.filename}`, 'success');
+    }, 'Zipping hub STLs…');
   }
 
   async exportBuildPlate3mf(): Promise<void> {
@@ -358,10 +435,25 @@ export class GeodesicApp {
         : u === 'imperial'
           ? `Timber ${(this.settings.lumW / 25.4).toFixed(2)}" × ${(this.settings.lumH / 25.4).toFixed(2)}"`
           : `Timber ${this.settings.lumW.toFixed(0)}×${this.settings.lumH.toFixed(0)} mm`;
-    const csv = strutTableCsv(this.strutTypes, mat);
+    const csv = strutTableCsv(this.strutTypes, mat, this.dome ?? undefined, this.hubTypes);
     const diamLabel = formatMeters(this.settings.diam, u).replace(/\s/g, '');
     downloadText(csv, `strut_lengths_V${this.settings.freq}_${diamLabel}.csv`, 'text/csv');
     showToast('Strut length table downloaded.', 'success');
+  }
+
+  exportBom(): void {
+    if (!this.dome) return;
+    const est = estimateMaterial(this.dome, this.hubTypes, this.strutTypes, this.hubParams(), this.settings);
+    const csv = bomCsv(this.settings, this.hubTypes, this.strutTypes, est);
+    downloadText(csv, `bom_V${this.settings.freq}_${this.settings.diam}m.csv`, 'text/csv');
+    showToast('BOM CSV downloaded.', 'success');
+  }
+
+  exportVertexCoords(): void {
+    if (!this.dome) return;
+    const csv = vertexCoordsCsv(this.dome, this.hubTypes);
+    downloadText(csv, `vertices_V${this.settings.freq}.csv`, 'text/csv');
+    showToast('Vertex coordinates downloaded.', 'success');
   }
 
   exportHubMap(): void {
@@ -475,6 +567,15 @@ export class GeodesicApp {
     setVal('showHubs', s.showHubs);
     setVal('showMarkers', s.showMarkers);
     setVal('door-enabled', s.door);
+    setVal('flat-base', s.flatBot);
+    setVal('preview-quality', s.previewQuality);
+    setVal('nozzle-preset', s.nozzlePreset);
+    setVal('filament-diameter', s.filamentDiameterMm);
+    setVal('tree-support-base', s.treeSupportBase);
+    setVal('emboss-preview', s.embossPreview);
+    setVal('auto-open-inspector', s.autoOpenInspector);
+    setVal('junction-drip', s.junctionDrip);
+    setVal('surface-noise', s.surfaceNoise);
     setVal('hub-body', s.bodyScale);
     setVal('hub-chamfer', s.chamfer);
     setVal('hub-detail', s.detail);
@@ -560,6 +661,11 @@ export class GeodesicApp {
 
     const presetSelect = document.getElementById('preset-select') as HTMLSelectElement | null;
     if (presetSelect && s.presetId) presetSelect.value = s.presetId;
+    const presetDesc = document.getElementById('preset-description');
+    if (presetDesc) {
+      const preset = getPreset(s.presetId ?? '') ?? loadCustomPresets().find((p) => p.id === s.presetId);
+      presetDesc.textContent = preset?.description ?? 'Custom configuration.';
+    }
 
     refreshChipStates();
   }
@@ -599,14 +705,15 @@ export class GeodesicApp {
 
   private animate = (): void => {
     this.animId = requestAnimationFrame(this.animate);
+    if (!this.settings.inspectorOpen) this.inspectorPaused = true;
     this.mainScene.render();
-    this.inspector.render();
+    if (this.settings.inspectorOpen) this.inspector.render();
   };
 }
 
 export function initApp(): GeodesicApp {
   window.addEventListener('geodesic:manifold-failed', () => {
-    showToast('Timber hub engine failed to load. Hard-refresh the page.', 'error', 8000);
+    showToast('Manifold CSG engine failed to load — hubs may not export watertight. Hard-refresh the page.', 'error', 8000);
   });
   return new GeodesicApp();
 }

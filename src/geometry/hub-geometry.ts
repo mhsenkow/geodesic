@@ -6,6 +6,7 @@ import { createTimberHub } from './timber-hub';
 import { isManifoldReady } from './manifold-init';
 import { createRoundNodeHub, createTimberNodeHub } from './node-hub-manifold';
 import { createMetaballHub } from './metaball-hub';
+import { effectiveHubStyle } from './smooth-curves';
 import { roundWeaverbirdOptions, shouldPolishHubMesh, weaverbirdSmooth } from './mesh-smooth';
 import { quatForStrutAxisY, WORLD_UP } from './hub-orient';
 import { junctionFlarePower } from './junction-profile';
@@ -191,7 +192,9 @@ export function createHubFromDirs(dirs: THREE.Vector3[], p: HubParams): THREE.Bu
 
   if (isManifoldReady()) {
     try {
-      if ((p.hubStyle ?? 'organic') === 'metaball') return createMetaballHub(dirs, p);
+      const style = effectiveHubStyle(p);
+      if (style === 'metaball') return createMetaballHub(dirs, p);
+      if (style === 'hybrid') return createMetaballHub(dirs, { ...p, hubStyle: 'metaball', surfaceSmooth: (p.surfaceSmooth ?? 0.6) * 1.05 });
       return p.matType === 'round' ? createRoundNodeHub(dirs, p) : createTimberNodeHub(dirs, p);
     } catch (err) {
       console.warn('Manifold hub build failed — falling back to legacy mesh.', err);
