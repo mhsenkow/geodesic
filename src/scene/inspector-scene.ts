@@ -6,6 +6,7 @@ import {
   createHub,
   disposeObject,
 } from '../geometry/hub-geometry';
+import { applyOverhangHeatmap } from '../geometry/printability';
 
 export class InspectorScene {
   readonly scene = new THREE.Scene();
@@ -66,9 +67,19 @@ export class InspectorScene {
   ): THREE.BufferGeometry | null {
     this.clear();
 
-    const hp: HubParams = { ...hubParams, printFrame: true };
-    const geo = createHub(ht.verts[0], dome, hp);
+    const hp: HubParams = {
+      ...hubParams,
+      printFrame: true,
+      hubLabel: ht.label,
+      socketLabels: ht.dirs.map((_, i) => String(i + 1)),
+    };
+    let geo = createHub(ht.verts[0], dome, hp);
     if (!geo) return null;
+    if (settings.showOverhangHeatmap) {
+      const heat = applyOverhangHeatmap(geo);
+      if (heat !== geo) geo.dispose();
+      geo = heat;
+    }
 
     if (settings.showBuildGuide) {
       this.inspBuildGuide = createBuildGuide(geo, hp);
@@ -76,8 +87,13 @@ export class InspectorScene {
     }
 
     const mat = this.inspMat.clone();
-    mat.color.set(ht.color);
+    mat.color.set(settings.showOverhangHeatmap ? 0xffffff : ht.color);
     mat.emissive.set(new THREE.Color(ht.color).multiplyScalar(0.1));
+    mat.vertexColors = settings.showOverhangHeatmap;
+    if (settings.showOverhangHeatmap) {
+      mat.metalness = 0.25;
+      mat.roughness = 0.42;
+    }
     this.inspMesh = new THREE.Mesh(geo, mat);
     this.scene.add(this.inspMesh);
 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { HubParams } from '../types';
 import { EPS } from '../types';
+import { socketTolerances } from './socket-fit';
 
 function prepGeo(g: THREE.BufferGeometry): THREE.BufferGeometry {
   let geo = g;
@@ -14,7 +15,7 @@ function prepGeo(g: THREE.BufferGeometry): THREE.BufferGeometry {
 export function estimateBuildFootRadius(p: HubParams): number {
   const margin = p.footMargin ?? 6;
   if (p.matType === 'round') {
-    const iR = p.rodD / 2 + p.tol;
+    const iR = p.rodD / 2 + socketTolerances(p).max;
     const oR = iR + p.wall;
     return oR * Math.max(1.15, p.bodyScale * 0.85) + margin;
   }
@@ -25,8 +26,50 @@ export function choosePrintUp(dirs: THREE.Vector3[]): THREE.Vector3 {
   if (dirs.length === 0) return new THREE.Vector3(0, 1, 0);
   const sum = new THREE.Vector3();
   for (const dir of dirs) sum.add(dir);
-  if (sum.lengthSq() < 1e-6) return new THREE.Vector3(0, 1, 0);
-  return sum.normalize();
+  const candidates: THREE.Vector3[] = [
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 1),
+    new THREE.Vector3(1, 0, 0),
+  ];
+  if (sum.lengthSq() > 1e-6) {
+    candidates.push(sum.clone().normalize(), sum.clone().multiplyScalar(-1).normalize());
+  }
+  for (const dir of dirs) {
+    candidates.push(dir.clone().normalize(), dir.clone().multiplyScalar(-1).normalize());
+  }
+  for (let i = 0; i < dirs.length; i++) {
+    for (let j = i + 1; j < dirs.length; j++) {
+      const cross = new THREE.Vector3().crossVectors(dirs[i], dirs[j]);
+      if (cross.lengthSq() > 1e-6) {
+        candidates.push(cross.normalize(), cross.clone().multiplyScalar(-1));
+      }
+      const bisect = dirs[i].clone().add(dirs[j]);
+      if (bisect.lengthSq() > 1e-6) candidates.push(bisect.normalize());
+    }
+  }
+
+  const score = (up: THREE.Vector3): number => {
+    let s = sum.lengthSq() > 1e-6 ? -up.dot(sum.clone().normalize()) * 0.2 : 0;
+    for (const dir of dirs) {
+      const d = dir.dot(up);
+      s += Math.max(0, -d - 0.15) ** 2 * 4.0;
+      s += Math.max(0, 0.18 - Math.abs(d)) * 0.12;
+    }
+    return s;
+  };
+
+  let best = candidates[0].clone().normalize();
+  let bestScore = Infinity;
+  for (const c of candidates) {
+    if (c.lengthSq() < 1e-6) continue;
+    const up = c.clone().normalize();
+    const s = score(up);
+    if (s < bestScore) {
+      bestScore = s;
+      best = up;
+    }
+  }
+  return best;
 }
 
 function footRadiusForGeo(geo: THREE.BufferGeometry, p: HubParams): number {

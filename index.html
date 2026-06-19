@@ -38,7 +38,9 @@
   <div class="section">
     <div class="section-header"><span>⬡ Structure</span><span class="chv">▾</span></div>
     <div class="section-body">
-      <div class="cg"><label>Frequency (V-Level)</label><div class="cr"><input type="range" id="frequency" min="1" max="4" value="2" step="1"><span class="rv" id="freq-val">V2</span></div></div>
+      <div class="cg"><label for="base-solid">Base Shape</label><select id="base-solid"><option value="icosahedron" selected>Icosahedron (20-face · buckyball)</option><option value="octahedron">Octahedron (8-face)</option><option value="tetrahedron">Tetrahedron (4-face)</option></select><p class="hint-text">Seed polyhedron the geodesic grid subdivides. Icosahedron is the classic geodesic/buckyball; coarser seeds give bolder facets.</p></div>
+      <div class="cg"><label for="geo-topology">Topology</label><select id="geo-topology"><option value="geodesic" selected>Geodesic (triangulated struts)</option><option value="goldberg">Goldberg / Fullerene (hex + pentagon, all 3-way hubs)</option></select><p class="hint-text">Goldberg is the true buckyball dual — every hub is a clean 3-way join.</p></div>
+      <div class="cg"><label>Frequency (V-Level)</label><div class="cr"><input type="range" id="frequency" min="1" max="6" value="2" step="1"><span class="rv" id="freq-val">V2</span></div></div>
       <div class="cg"><label id="label-diameter">Dome Diameter (m)</label><input type="number" id="diameter" value="4.0" step="0.5" min="1" max="30"></div>
       <div class="cg"><label>Truncation</label><select id="truncation"><option value="0.5">½ Dome</option><option value="0.625" selected>⅝ Dome (Flat)</option><option value="0.75">¾ Dome</option></select></div>
       <div class="toggle-row"><span>Door Opening</span><input type="checkbox" class="toggle" id="door-enabled"></div>
@@ -59,6 +61,7 @@
       <div class="cg rect-only" id="grp-lum-w"><label id="label-lum-w">Lumber Width (mm)</label><input type="number" id="lumberW" value="19" step="0.1" min="10" max="150"><p class="hint-text" id="lum-w-dual"></p></div>
       <div class="cg rect-only" id="grp-lum-h"><label id="label-lum-h">Lumber Depth (mm)</label><input type="number" id="lumberH" value="38" step="0.1" min="20" max="200"><p class="hint-text" id="lum-h-dual"></p></div>
       <div class="toggle-row"><span>Screw Pilot Holes</span><input type="checkbox" class="toggle" id="screw-holes" checked></div>
+      <div class="toggle-row"><span>Raised Screw Bosses</span><input type="checkbox" class="toggle" id="screw-bosses" checked></div>
       <div class="cg"><label>Screw / Set-Screw Size</label><select id="screw-dia"><option value="3.3">M4 wood screw (3.3 mm)</option><option value="4.2" selected>#8 wood screw (4.2 mm)</option><option value="5.0">M5 / #10 (5.0 mm)</option></select></div>
     </div>
   </div>
@@ -67,6 +70,15 @@
     <div class="section-header"><span>⊞ Slicer Settings</span><span class="chv">▾</span></div>
     <div class="section-body">
       <div class="cg"><label id="label-tolerance">Printer Tolerance</label><div class="cr"><input type="range" id="tolerance" min="0" max="1" value="0.3" step="0.05"><span class="rv" id="tol-val">0.30mm</span></div></div>
+      <div class="input-pair">
+        <div class="cg"><label id="label-tol-x">Socket Tol X (mm)</label><input type="number" id="tol-x" value="0.3" step="0.05" min="0" max="2"></div>
+        <div class="cg"><label id="label-tol-y">Socket Tol Y (mm)</label><input type="number" id="tol-y" value="0.3" step="0.05" min="0" max="2"></div>
+      </div>
+      <div class="input-pair">
+        <div class="cg"><label id="label-nozzle-dia">Nozzle (mm)</label><input type="number" id="nozzle-dia" value="0.4" step="0.05" min="0.1" max="1.2"></div>
+        <div class="cg"><label>Plate Width (mm)</label><input type="number" id="build-plate-w" value="220" step="5" min="60" max="500"></div>
+      </div>
+      <div class="cg"><label>Plate Depth (mm)</label><input type="number" id="build-plate-d" value="220" step="5" min="60" max="500"></div>
       <div class="cg"><label id="label-wall">Wall Thickness (mm)</label><input type="number" id="wallThickness" value="5" step="0.5" min="2" max="15"></div>
       <div class="toggle-row"><span>Build Surface Foot</span><input type="checkbox" class="toggle" id="printFoot" checked></div>
       <div class="cg"><label id="label-foot-margin">Build Foot Margin (mm)</label><div class="cr"><input type="range" id="foot-margin" min="0" max="12" value="6" step="0.5"><span class="rv" id="foot-margin-val">6.0mm</span></div></div>
@@ -90,8 +102,11 @@
       <div class="hub-list" id="hub-list"></div>
       <div class="btn-row">
         <button class="btn btn-secondary" id="btn-export-all" type="button" disabled>Export All Hubs (STL)</button>
+        <button class="btn btn-secondary" id="btn-export-plate" type="button">Export Build Plate (3MF)</button>
         <button class="btn btn-secondary" id="btn-export-struts" type="button">Export Strut Lengths (CSV)</button>
         <button class="btn btn-secondary" id="btn-export-map" type="button">Export Hub Map (SVG)</button>
+        <button class="btn btn-secondary" id="btn-export-design" type="button">Export Design JSON</button>
+        <button class="btn btn-secondary" id="btn-copy-share" type="button">Copy Share URL</button>
       </div>
     </div>
   </div>
@@ -114,6 +129,7 @@
       <div class="mat-readout" id="mat-stock-readout"></div>
 
       <div class="insp-section-title">3D Print Material</div>
+      <div class="cg"><label>Infill (%)</label><input type="number" id="print-infill" value="30" step="5" min="5" max="100"></div>
       <div class="cg"><label>Filament Density (g/cm³)</label><input type="number" id="filament-density" value="1.24" step="0.01" min="0.5" max="3"></div>
       <div class="cg"><label>Filament Price ($/kg)</label><input type="number" id="filament-price" value="25" step="1" min="0"></div>
       <div class="mat-readout" id="mat-print-readout"></div>
@@ -145,9 +161,10 @@
   </div>
   <div class="insp-body">
     <div class="hint-text" id="insp-print-hint"><b>Print Ready:</b> Inspector and STL export use a Z-up print frame with the build surface on the bed.</div>
+    <div class="validation-badges" id="insp-validation-badges"></div>
 
     <div class="insp-section-title">Hub Style &amp; Refinement</div>
-      <div class="cg rect-only" id="hub-style-group" style="display:none"><label>Timber Style</label><div class="radio-group"><input type="radio" name="hubStyle" id="style-sharp" value="sharp"><label for="style-sharp">Sharp</label><input type="radio" name="hubStyle" id="style-organic" value="organic" checked><label for="style-organic">Organic</label></div></div>
+      <div class="cg" id="hub-style-group"><label>Hub Style</label><div class="radio-group radio-group-3"><input type="radio" name="hubStyle" id="style-sharp" value="sharp"><label for="style-sharp">Sharp</label><input type="radio" name="hubStyle" id="style-organic" value="organic" checked><label for="style-organic">Organic</label><input type="radio" name="hubStyle" id="style-metaball" value="metaball"><label for="style-metaball">Metaball</label></div><p class="hint-text">Sharp = crisp CSG · Organic = smooth-blended · Metaball = amorphous SDF blob.</p></div>
     <div class="cg" id="flare-group"><label id="flare-label">Blend Radius (Node Size)</label><div class="cr"><input type="range" id="hub-body" min="1" max="2.5" value="1.6" step="0.1"><span class="rv" id="hub-body-val">1.6x</span></div><p class="hint-text" id="flare-hint">Size of the central blob the struts merge into. Pair with Mesh Smooth for organic joins.</p><div class="chip-row" data-target="hub-body"><button type="button" class="chip" data-value="1.2">Slim</button><button type="button" class="chip" data-value="1.6">Standard</button><button type="button" class="chip" data-value="2.1">Chunky</button></div></div>
     <div class="cg" id="junction-meet-group"><label id="label-junction-meet">Junction Meet Blend</label><div class="cr"><input type="range" id="junction-meet" min="0.6" max="1.5" value="1" step="0.05"><span class="rv" id="junction-meet-val">1.00×</span></div><p class="hint-text">Solid core where struts meet — raise for tighter insertion angles below.</p></div>
     <div class="cg"><label id="label-hub-chamfer">Entry Bevel (mm)</label><div class="cr"><input type="range" id="hub-chamfer" min="0" max="6" value="2" step="0.5"><span class="rv" id="hub-chamfer-val">2.0</span></div><p class="hint-text">Conical lead-in at each socket mouth so struts slide in easily.</p></div>
@@ -160,8 +177,20 @@
 
     <div class="insp-section-title">Organic Surface</div>
     <div class="cg"><label id="label-surface-smooth">Mesh Smooth</label><div class="cr"><input type="range" id="surface-smooth" min="0" max="1" value="0.6" step="0.05"><span class="rv" id="surface-smooth-val">60%</span></div><p class="hint-text">How organically the struts blend into the node (Manifold smooth + refine). Same look on the dome and in export.</p><div class="chip-row" data-target="surface-smooth"><button type="button" class="chip" data-value="0.25">Crisp</button><button type="button" class="chip" data-value="0.6">Balanced</button><button type="button" class="chip" data-value="0.9">Organic</button></div></div>
+    <div class="cg"><label id="label-strut-taper">Strut Taper</label><div class="cr"><input type="range" id="strut-taper" min="0.55" max="1" value="0.88" step="0.01"><span class="rv" id="strut-taper-val">88%</span></div><p class="hint-text">Slims each arm toward its tip for a teardrop silhouette (round / metaball).</p><div class="chip-row" data-target="strut-taper"><button type="button" class="chip" data-value="0.65">Tapered</button><button type="button" class="chip" data-value="0.85">Soft</button><button type="button" class="chip" data-value="1">Even</button></div></div>
     <div class="cg"><label id="label-socket-depth">Socket Depth</label><div class="cr"><input type="range" id="socket-depth" min="0.55" max="1.05" value="0.9" step="0.05"><span class="rv" id="socket-depth-val">90%</span></div><p class="hint-text">How far the strut seats into the socket.</p></div>
+    <div class="cg"><label id="label-socket-depth-mm">Socket Depth Override (mm)</label><input type="number" id="socket-depth-mm" value="0" step="1" min="0" max="200"><p class="hint-text">0 uses the percentage above; any value becomes the explicit insertion depth.</p></div>
+    <div class="toggle-row"><span>Friction Ribs</span><input type="checkbox" class="toggle" id="friction-ribs" checked></div>
+    <div class="input-pair">
+      <div class="cg"><label id="label-rib-depth">Rib Depth (mm)</label><input type="number" id="rib-depth" value="0.35" step="0.05" min="0" max="2"></div>
+      <div class="cg"><label>Rib Count</label><input type="number" id="rib-count" value="2" step="1" min="0" max="4"></div>
+    </div>
     <div class="toggle-row"><span>Subdivide Mesh</span><input type="checkbox" class="toggle" id="mesh-subdivide" checked></div>
+    <div class="toggle-row" title="Bore through the solid core — lighter, drains, prints faster"><span>Hollow Through-Core</span><input type="checkbox" class="toggle" id="bore-through"></div>
+    <div class="toggle-row" title="Drainage / weight-saving vent through the print base"><span>Base Drain Vent</span><input type="checkbox" class="toggle" id="base-vent" checked></div>
+    <div class="toggle-row"><span>Emboss Hub Labels</span><input type="checkbox" class="toggle" id="emboss-labels" checked></div>
+    <div class="toggle-row"><span>Alignment Notches</span><input type="checkbox" class="toggle" id="alignment-notches" checked></div>
+    <div class="toggle-row"><span>Overhang Heatmap</span><input type="checkbox" class="toggle" id="overhang-heatmap"></div>
     <div class="toggle-row"><span>Show Wireframe</span><input type="checkbox" class="toggle" id="hub-wireframe"></div>
     <div class="toggle-row"><span>Show Build Plate</span><input type="checkbox" class="toggle" id="hub-build-guide" checked></div>
 

@@ -2,6 +2,46 @@
 
 All notable changes to this project are documented here. Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-06-18
+
+### Added
+
+- **Metaball hub style.** A third hub style alongside Sharp and Organic: the
+  shell is a signed-distance field (node sphere smooth-max'd with one capsule per
+  strut) realized via `Manifold.levelSet`, giving genuinely amorphous, molten
+  joins. Crisp bores / screw holes / entry bevels are booleaned out afterward so
+  sockets still fit. Watertight by construction. `surfaceSmooth` → blend radius,
+  `bodyScale` → node size, `subdStrutSize` → strut radius. Works round + timber.
+- **Base Shape selector** — the geodesic grid can now seed from an
+  **icosahedron** (classic geodesic/buckyball), **octahedron**, or
+  **tetrahedron**, each producing a distinct dome family across all frequencies.
+- **Goldberg / Fullerene topology** — dualize any geodesic sphere into the true
+  buckyball mesh (hex + pentagon faces, every hub 3-valent). Ideal for uniform
+  connector sets and metaball presets.
+- Hub Style is now a 3-way control shown for both round and timber.
+- **Strut Taper** — slim each arm toward its tip for teardrop silhouettes
+  (round + metaball).
+- **Hollow Through-Core** and **Base Drain Vent** — optional axial bore and a
+  vent through the print foot for lighter, faster prints.
+- **Socket fit toolkit** (`socket-fit.ts`) — per-axis tolerances (`tolX` /
+  `tolY`), **Friction Ribs**, and **Raised Screw Bosses** as real positive
+  geometry (not mesh hacks).
+- **Hub decorations** — embossed hub labels on the print foot and socket
+  alignment notches for assembly orientation.
+- **Printability checks** — minimum wall vs nozzle diameter warnings on export;
+  optional **Overhang Heatmap** in the Hub Inspector.
+- **3MF build plate export** — packs one copy of each hub type onto a virtual
+  plate with per-object metadata and a sidecar `geodesic-manifest.json`.
+- **Feel presets** — Pebble, Coral (metaball), Bone, Featherweight, Industrial,
+  and Buckyball (Goldberg) quick-starts tuned for the new options.
+- Unit tests for base seeds, Goldberg duals, metaball watertightness, luscious
+  hub options, printability/fit, and 3MF export.
+
+### Notes
+
+- `genSphere` is generalized to any triangular seed polyhedron. Class II/III
+  geodesic subdivisions remain on the roadmap.
+
 ## [1.6.0] - 2026-06-18
 
 ### Changed
@@ -25,6 +65,14 @@ All notable changes to this project are documented here. Versioning follows [Sem
 
 ### Added
 
+- **Strut Cut List panel** — every strut length drawn as a scaled bar with its
+  cut length and count, longest first, plus total linear length.
+- **Material & Cost panel** — estimates linear stock (sticks needed from stock
+  length + waste %, and cost) and 3D-print material (solid volume from the
+  watertight hub meshes, infill-adjusted filament mass + length, and cost),
+  with a combined total. Inputs persist.
+- **Quick-pick chips** under Blend Radius, Mesh Detail, Connection Length and
+  Mesh Smooth — one-click optimal presets that highlight when active.
 - `Entry Bevel` now subtracts a conical (round) / flared rectangular (timber)
   lead-in at each socket mouth for easier strut insertion.
 - `Socket Depth` now scales round sockets too (was timber-only).

@@ -1,5 +1,5 @@
 import type { GeodesicApp } from './app';
-import type { UnitSystem } from '../types';
+import type { HubStyle, UnitSystem } from '../types';
 import { PRESETS } from '../presets';
 import { clearSettings } from '../storage/settings';
 import {
@@ -49,6 +49,13 @@ export function bindUi(app: GeodesicApp): void {
     app.persist();
   });
 
+  document.getElementById('screw-bosses')?.addEventListener('change', (e) => {
+    app.settings.screwBosses = (e.target as HTMLInputElement).checked;
+    app.updateInspector();
+    void app.buildDome(false);
+    app.persist();
+  });
+
   document.getElementById('screw-dia')?.addEventListener('change', (e) => {
     app.settings.screwDia = +(e.target as HTMLSelectElement).value;
     app.updateInspector();
@@ -68,6 +75,76 @@ export function bindUi(app: GeodesicApp): void {
   document.getElementById('truncation')?.addEventListener('change', (e) => {
     app.settings.trunc = +(e.target as HTMLInputElement).value;
     void app.buildDome(false);
+    app.persist();
+  });
+
+  document.getElementById('base-solid')?.addEventListener('change', (e) => {
+    app.settings.baseSolid = (e.target as HTMLSelectElement).value as typeof app.settings.baseSolid;
+    void app.buildDome(false);
+    app.persist();
+  });
+
+  document.getElementById('geo-topology')?.addEventListener('change', (e) => {
+    app.settings.geoTopology = (e.target as HTMLSelectElement).value as typeof app.settings.geoTopology;
+    void app.buildDome(false);
+    app.persist();
+  });
+
+  document.getElementById('strut-taper')?.addEventListener('input', (e) => {
+    app.settings.strutTaper = +(e.target as HTMLInputElement).value;
+    const el = document.getElementById('strut-taper-val');
+    if (el) el.textContent = Math.round(app.settings.strutTaper * 100) + '%';
+    app.updateInspector();
+    app.persist();
+  });
+
+  document.getElementById('bore-through')?.addEventListener('change', (e) => {
+    app.settings.boreThrough = (e.target as HTMLInputElement).checked;
+    app.updateInspector();
+    void app.buildDome(false);
+    app.persist();
+  });
+
+  document.getElementById('base-vent')?.addEventListener('change', (e) => {
+    app.settings.baseVent = (e.target as HTMLInputElement).checked;
+    app.updateInspector();
+    app.persist();
+  });
+
+  document.getElementById('friction-ribs')?.addEventListener('change', (e) => {
+    app.settings.frictionRibs = (e.target as HTMLInputElement).checked;
+    app.updateInspector();
+    void app.buildDome(false);
+    app.persist();
+  });
+
+  ([
+    ['rib-depth', 'ribDepth'],
+    ['rib-count', 'ribCount'],
+    ['socket-depth-mm', 'socketDepthMm'],
+  ] as const).forEach(([id, key]) => {
+    document.getElementById(id)?.addEventListener('change', (e) => {
+      app.settings[key] = Math.max(0, +(e.target as HTMLInputElement).value);
+      app.updateInspector();
+      void app.buildDome(false);
+      app.persist();
+    });
+  });
+
+  ([
+    ['emboss-labels', 'embossLabels'],
+    ['alignment-notches', 'alignmentNotches'],
+  ] as const).forEach(([id, key]) => {
+    document.getElementById(id)?.addEventListener('change', (e) => {
+      app.settings[key] = (e.target as HTMLInputElement).checked;
+      app.updateInspector();
+      app.persist();
+    });
+  });
+
+  document.getElementById('overhang-heatmap')?.addEventListener('change', (e) => {
+    app.settings.showOverhangHeatmap = (e.target as HTMLInputElement).checked;
+    app.updateInspector();
     app.persist();
   });
 
@@ -114,12 +191,35 @@ export function bindUi(app: GeodesicApp): void {
 
   document.getElementById('tolerance')?.addEventListener('input', (e) => {
     app.settings.tol = +(e.target as HTMLInputElement).value;
+    app.settings.tolX = app.settings.tol;
+    app.settings.tolY = app.settings.tol;
+    app.syncFormFromSettings();
     formatSliderValues(app.settings);
   });
   document.getElementById('tolerance')?.addEventListener('change', () => {
     app.updateInspector();
     void app.buildDome(false);
     app.persist();
+  });
+
+  ([
+    ['tol-x', 'tolX'],
+    ['tol-y', 'tolY'],
+    ['nozzle-dia', 'nozzleDia'],
+    ['build-plate-w', 'buildPlateW'],
+    ['build-plate-d', 'buildPlateD'],
+  ] as const).forEach(([id, key]) => {
+    document.getElementById(id)?.addEventListener('change', (e) => {
+      app.settings[key] = Math.max(0, +(e.target as HTMLInputElement).value);
+      if (id === 'tol-x' || id === 'tol-y') {
+        app.settings.tol = (app.settings.tolX + app.settings.tolY) / 2;
+        app.syncFormFromSettings();
+        void app.buildDome(false);
+      } else {
+        app.updateInspector();
+      }
+      app.persist();
+    });
   });
 
   document.getElementById('printFoot')?.addEventListener('change', (e) => {
@@ -216,6 +316,7 @@ export function bindUi(app: GeodesicApp): void {
       'subd-strut-size',
       'socket-depth',
       'surface-smooth',
+      'strut-taper',
     ] as const
   ).forEach((id) => {
     document.getElementById(id)?.addEventListener('change', () => void app.buildDome(false));
@@ -262,7 +363,7 @@ export function bindUi(app: GeodesicApp): void {
 
   document.querySelectorAll('input[name="hubStyle"]').forEach((r) =>
     r.addEventListener('change', (e) => {
-      app.settings.hubStyle = (e.target as HTMLInputElement).value as 'sharp' | 'organic';
+      app.settings.hubStyle = (e.target as HTMLInputElement).value as HubStyle;
       if (app.settings.hubStyle === 'organic' && app.settings.bodyScale < 1.15) {
         app.settings.bodyScale = 1.4;
       }
@@ -321,11 +422,14 @@ export function bindUi(app: GeodesicApp): void {
     app.updateMaterialPanels();
     app.persist();
   });
-  const costInputs: Array<[string, 'stockWastePct' | 'stockPrice' | 'filamentDensity' | 'filamentPrice']> = [
+  const costInputs: Array<
+    [string, 'stockWastePct' | 'stockPrice' | 'filamentDensity' | 'filamentPrice' | 'printInfillPct']
+  > = [
     ['stock-waste', 'stockWastePct'],
     ['stock-price', 'stockPrice'],
     ['filament-density', 'filamentDensity'],
     ['filament-price', 'filamentPrice'],
+    ['print-infill', 'printInfillPct'],
   ];
   costInputs.forEach(([id, key]) => {
     document.getElementById(id)?.addEventListener('change', (e) => {
@@ -354,8 +458,11 @@ export function bindUi(app: GeodesicApp): void {
 
   document.getElementById('btn-export-hub')?.addEventListener('click', () => void app.exportSelectedHub());
   document.getElementById('btn-export-all')?.addEventListener('click', () => void app.exportAllHubs());
+  document.getElementById('btn-export-plate')?.addEventListener('click', () => void app.exportBuildPlate3mf());
   document.getElementById('btn-export-struts')?.addEventListener('click', () => app.exportStrutTable());
   document.getElementById('btn-export-map')?.addEventListener('click', () => app.exportHubMap());
+  document.getElementById('btn-export-design')?.addEventListener('click', () => app.exportDesignJson());
+  document.getElementById('btn-copy-share')?.addEventListener('click', () => void app.copyShareUrl());
   document.getElementById('btn-open-inspector')?.addEventListener('click', () =>
     app.openInspector(app.settings.selHub ?? 0)
   );

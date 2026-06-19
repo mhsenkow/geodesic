@@ -6,9 +6,10 @@ import { frameForStrutAxisZ, WORLD_UP } from './hub-orient';
 import { getCrossSection, getManifold } from './manifold-init';
 import { transformManifold } from './manifold-mesh';
 import { finishManifoldHub } from './timber-finish';
-import { junctionInset, timberVoidInset } from './timber-junction';
+import { timberVoidInset } from './timber-junction';
 import { timberCoreRadius } from './timber-organic-profile';
 import { flareParams, timberDims, type TimberDims } from './timber-socket';
+import { addTimberFrictionRibs, addTimberScrewBosses } from './socket-fit';
 
 function alignZToDirection(m: Manifold, dir: THREE.Vector3, refUp = WORLD_UP): Manifold {
   return transformManifold(m, frameForStrutAxisZ(dir, refUp));
@@ -112,6 +113,9 @@ export function buildTimberHubSolid(dirs: THREE.Vector3[], p: HubParams): Manifo
   }
 
   let hub = Manifold.difference(Manifold.union(outers), Manifold.union(voids));
+
+  hub = addTimberFrictionRibs(hub, dirs, d, p, inset);
+  hub = addTimberScrewBosses(hub, dirs, d, p);
 
   if (p.screwHoles) {
     hub = subtractScrewHoles(hub, dirs, d, p);

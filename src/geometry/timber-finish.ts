@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import type { Manifold } from 'manifold-3d';
 import type { HubParams } from '../types';
 import { choosePrintUp } from './hub-foot';
+import { addHubDecorations } from './hub-decorations';
 import { manifoldToBufferGeometry, transformManifold } from './manifold-mesh';
+import { targetTriangleLength } from './printability';
 import { sitManifoldOnBed, unionPrintBase } from './timber-print-base';
 
 function alignManifoldToPrintUp(m: Manifold, printUp: THREE.Vector3): Manifold {
@@ -58,10 +60,19 @@ export function finishManifoldHub(
   }
 
   if (p.printFrame) {
+    hub = hub.refineToLength(targetTriangleLength({ ...p, matType }));
+  }
+
+  if (p.printFrame) {
     hub = sitManifoldOnBed(hub);
   }
 
-  const geo = manifoldToBufferGeometry(hub);
+  let geo = manifoldToBufferGeometry(hub);
+  if (p.printFrame) {
+    const decorated = addHubDecorations(geo, dirs, { ...p, matType }, printUp);
+    if (decorated !== geo) geo.dispose();
+    geo = decorated;
+  }
   if (printUp) geo.userData.printUp = printUp.toArray();
   return geo;
 }

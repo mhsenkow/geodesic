@@ -3,16 +3,25 @@ import type { AppSettings, DomeData, HubParams, HubType, StrutType } from '../ty
 import { DOME_RADIUS } from '../types';
 import {
   genSphere,
+  dualizeSphere,
   truncDome,
   classHubs,
   computeStrutTypes,
   strutTableCsv,
 } from '../geodesic/math';
-import { exportHubStl, downloadBlob, downloadText } from '../geometry/export';
+import {
+  designJson,
+  exportHubStl,
+  exportPackedBuildPlate3mf,
+  downloadBlob,
+  downloadText,
+} from '../geometry/export';
+import { analyzePrintability } from '../geometry/printability';
+import { validateStlGeometry } from '../geometry/stl-validation';
 import { generateHubMapSvg } from '../guides/hub-map';
-import { estimateMaterial } from '../guides/material';
+import { estimateMaterial, meshVolumeMm3 } from '../guides/material';
 import { renderCutList, renderMaterialEstimate, refreshChipStates } from './material-panel';
-import { loadSettings, saveSettings } from '../storage/settings';
+import { loadSettings, saveSettings, settingsShareHash } from '../storage/settings';
 import { getPreset } from '../presets';
 import { getMaterialProfile, applyMaterialProfile, defaultStockForMatType } from '../materials/catalog';
 import { MainScene } from '../scene/main-scene';
@@ -70,6 +79,8 @@ export class GeodesicApp {
       lumW: this.settings.lumW,
       lumH: this.settings.lumH,
       tol: this.settings.tol,
+      tolX: this.settings.tolX,
+      tolY: this.settings.tolY,
       wall: this.settings.wall,
       bodyScale: this.settings.bodyScale,
       chamfer: this.settings.chamfer,
@@ -84,10 +95,22 @@ export class GeodesicApp {
       baseThickness: this.settings.baseThickness,
       baseScale: this.settings.baseScale,
       socketDepth: this.settings.socketDepth,
+      socketDepthMm: this.settings.socketDepthMm,
       surfaceSmooth: this.settings.surfaceSmooth,
       meshSubdivide: this.settings.meshSubdivide,
       subdConnectionLength: this.settings.subdConnectionLength,
       subdStrutSize: this.settings.subdStrutSize,
+      strutTaper: this.settings.strutTaper,
+      boreThrough: this.settings.boreThrough,
+      baseVent: this.settings.baseVent,
+      nozzleDia: this.settings.nozzleDia,
+      frictionRibs: this.settings.frictionRibs,
+      ribDepth: this.settings.ribDepth,
+      ribCount: this.settings.ribCount,
+      screwBosses: this.settings.screwBosses,
+      embossLabels: this.settings.embossLabels,
+      alignmentNotches: this.settings.alignmentNotches,
+      showOverhangHeatmap: this.settings.showOverhangHeatmap,
     };
   }
 
@@ -98,7 +121,8 @@ export class GeodesicApp {
   async buildDome(showAutoInspector = true): Promise<void> {
     await withLoading(async () => {
       this.settings.doorW = clampDoorWidth(this.settings.doorW, this.settings.diam);
-      const sp = genSphere(this.settings.freq, DOME_RADIUS);
+      let sp = genSphere(this.settings.freq, DOME_RADIUS, this.settings.baseSolid);
+      if (this.settings.geoTopology === 'goldberg') sp = dualizeSphere(sp);
       this.dome = truncDome(
         sp,
         this.settings.trunc,
@@ -177,7 +201,45 @@ export class GeodesicApp {
     const triCount = geo.attributes.position.count / 3;
     const stats = document.getElementById('insp-mesh-stats');
     if (stats) {
-      stats.textContent = `${Math.round(triCount).toLocaleString()} tris · ~${((triCount * 50) / 1024).toFixed(0)} KB`;
+      const cm3 = meshVolumeMm3(geo) / 1000;
+      const infill = THREE.MathUtils.clamp(this.settings.printInfillPct / 100, 0.05, 1);
+      const grams = cm3 * (0.2 + 0.8 * infill) * this.settings.filamentDensity;
+      stats.textContent = `${Math.round(triCount).toLocaleString()} tris · ${cm3.toFixed(0)} cm³ · ~${Math.round(grams)} g`;
+    }
+
+    const badgeWrap = document.getElementById('insp-validation-badges');
+    if (badgeWrap) {
+      badgeWrap.innerHTML = '';
+      const addBadge = (kind: 'ok' | 'warn' | 'error', text: string, title = '') => {
+        const el = document.createElement('span');
+        el.className = `validation-badge ${kind}`;
+        el.textContent = text;
+        if (title) el.title = title;
+        badgeWrap.appendChild(el);
+      };
+      const nonIndexed = geo.index ? geo.toNonIndexed() : geo;
+      const validation = validateStlGeometry(nonIndexed.attributes.position.array as Float32Array);
+      if (nonIndexed !== geo) nonIndexed.dispose();
+      const report = analyzePrintability(geo, this.hubParams());
+      addBadge(validation.errors.length ? 'error' : validation.warnings.length ? 'warn' : 'ok', 'Watertight', [
+        ...validation.errors,
+        ...validation.warnings,
+      ].join(' '));
+      addBadge(
+        report.overhangPct > 8 ? 'warn' : 'ok',
+        `Overhang ${report.overhangPct.toFixed(1)}%`,
+        report.warnings.find((w) => w.includes('surface')) ?? 'Down-facing area over a 45 degree support threshold.'
+      );
+      addBadge(
+        report.minWallMm < report.requiredWallMm ? 'warn' : 'ok',
+        `Wall ${report.minWallMm.toFixed(1)}mm`,
+        `2x nozzle target: ${report.requiredWallMm.toFixed(1)}mm`
+      );
+      addBadge(
+        report.maxEdgeMm > report.targetEdgeMm * 1.45 ? 'warn' : 'ok',
+        `Edge ${report.maxEdgeMm.toFixed(1)}mm`,
+        `Target max edge: ${report.targetEdgeMm.toFixed(1)}mm`
+      );
     }
 
     const angDiv = document.getElementById('insp-angles');
@@ -245,6 +307,47 @@ export class GeodesicApp {
     showToast('All hubs exported.', 'success');
   }
 
+  async exportBuildPlate3mf(): Promise<void> {
+    if (!this.dome) return;
+    await withLoading(async () => {
+      const result = exportPackedBuildPlate3mf(
+        this.hubTypes,
+        this.dome!,
+        this.strutTypes,
+        this.settings,
+        this.hubParams()
+      );
+      if (!result) {
+        showToast('3MF export failed — no hub geometry generated.', 'error');
+        return;
+      }
+      downloadBlob(result.blob, result.filename);
+      if (result.warnings.length) {
+        showToast(`3MF exported with ${result.warnings.length} print warning(s).`, 'error', 6000);
+      } else {
+        showToast(`Exported ${result.filename}`, 'success');
+      }
+    }, 'Packing 3MF build plate…');
+  }
+
+  exportDesignJson(): void {
+    const content = designJson(this.settings, this.hubTypes, this.strutTypes);
+    downloadText(content, `geodesic_design_V${this.settings.freq}_${this.settings.diam}m.json`, 'application/json');
+    showToast('Design JSON exported.', 'success');
+  }
+
+  async copyShareUrl(): Promise<void> {
+    const url = new URL(location.href);
+    url.hash = settingsShareHash(this.settings);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      showToast('Share URL copied.', 'success');
+    } catch {
+      downloadText(url.toString(), 'geodesic_share_url.txt', 'text/plain');
+      showToast('Clipboard unavailable — share URL downloaded.', 'info');
+    }
+  }
+
   exportStrutTable(): void {
     const u = this.settings.unitSystem;
     const mat =
@@ -272,10 +375,14 @@ export class GeodesicApp {
     const preset = getPreset(presetId);
     if (!preset) return;
     this.settings = { ...this.settings, ...preset.settings, presetId };
+    if (preset.settings.tol != null && preset.settings.tolX == null) this.settings.tolX = preset.settings.tol;
+    if (preset.settings.tol != null && preset.settings.tolY == null) this.settings.tolY = preset.settings.tol;
     if (preset.settings.materialStockId) {
       const profile = getMaterialProfile(preset.settings.materialStockId);
       if (profile) Object.assign(this.settings, applyMaterialProfile(profile));
       this.settings = { ...this.settings, ...preset.settings, presetId };
+      if (preset.settings.tol != null && preset.settings.tolX == null) this.settings.tolX = preset.settings.tol;
+      if (preset.settings.tol != null && preset.settings.tolY == null) this.settings.tolY = preset.settings.tol;
     }
     this.syncFormFromSettings();
     void this.buildDome();
@@ -286,6 +393,8 @@ export class GeodesicApp {
     const profile = getMaterialProfile(stockId);
     if (!profile) return;
     Object.assign(this.settings, applyMaterialProfile(profile));
+    this.settings.tolX = this.settings.tol;
+    this.settings.tolY = this.settings.tol;
     if (profile.matType === 'rect' && this.settings.bodyScale < 1.2) {
       this.settings.bodyScale = 1.5;
       this.settings.hubStyle = 'organic';
@@ -332,6 +441,8 @@ export class GeodesicApp {
     });
     const exportAll = document.getElementById('btn-export-all') as HTMLButtonElement | null;
     if (exportAll) exportAll.disabled = this.hubTypes.length === 0;
+    const exportPlate = document.getElementById('btn-export-plate') as HTMLButtonElement | null;
+    if (exportPlate) exportPlate.disabled = this.hubTypes.length === 0;
   }
 
   syncFormFromSettings(): void {
@@ -353,6 +464,11 @@ export class GeodesicApp {
     setVal('frequency', s.freq);
     setVal('truncation', s.trunc);
     setVal('tolerance', s.tol);
+    setVal('tol-x', s.tolX);
+    setVal('tol-y', s.tolY);
+    setVal('nozzle-dia', s.nozzleDia);
+    setVal('build-plate-w', s.buildPlateW);
+    setVal('build-plate-d', s.buildPlateD);
     setVal('printFoot', s.printFoot);
     setVal('foot-margin', s.footMargin);
     setVal('showWireframe', s.showWire);
@@ -369,9 +485,26 @@ export class GeodesicApp {
     setVal('print-up-z', s.printUpOverride?.[2] ?? 0);
     setVal('print-up-override', s.printUpOverride != null);
     setVal('screw-holes', s.screwHoles);
+    setVal('screw-bosses', s.screwBosses);
     setVal('screw-dia', s.screwDia);
     (document.getElementById('style-sharp') as HTMLInputElement).checked = s.hubStyle === 'sharp';
     (document.getElementById('style-organic') as HTMLInputElement).checked = s.hubStyle === 'organic';
+    const styleMeta = document.getElementById('style-metaball') as HTMLInputElement | null;
+    if (styleMeta) styleMeta.checked = s.hubStyle === 'metaball';
+    setVal('base-solid', s.baseSolid);
+    setVal('geo-topology', s.geoTopology);
+    setVal('strut-taper', s.strutTaper);
+    setVal('bore-through', s.boreThrough);
+    setVal('base-vent', s.baseVent);
+    setVal('friction-ribs', s.frictionRibs);
+    setVal('rib-depth', s.ribDepth);
+    setVal('rib-count', s.ribCount);
+    setVal('socket-depth-mm', s.socketDepthMm);
+    setVal('emboss-labels', s.embossLabels);
+    setVal('alignment-notches', s.alignmentNotches);
+    setVal('overhang-heatmap', s.showOverhangHeatmap);
+    const taperVal = document.getElementById('strut-taper-val');
+    if (taperVal) taperVal.textContent = Math.round(s.strutTaper * 100) + '%';
     setVal('junction-meet', s.junctionMeet);
     setVal('socket-depth', s.socketDepth);
     setVal('surface-smooth', s.surfaceSmooth);
@@ -383,6 +516,7 @@ export class GeodesicApp {
     setVal('stock-price', s.stockPrice);
     setVal('filament-density', s.filamentDensity);
     setVal('filament-price', s.filamentPrice);
+    setVal('print-infill', s.printInfillPct);
     const stockKind = document.getElementById('mat-stock-kind');
     if (stockKind) stockKind.textContent = s.matType === 'round' ? 'Tube' : 'Timber';
 

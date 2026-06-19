@@ -1,22 +1,22 @@
-import * as THREE from 'three';
 import type { HubParams } from '../types';
 import { smoothStep01 } from './hub-geometry';
 import { junctionFlarePower } from './junction-profile';
+import { socketLengthFromSettings, socketTolerances } from './socket-fit';
 import type { TimberDims } from './timber-socket';
 
 /** Stock size analogue to round tube outer diameter (mm). */
 export function timberStock(p: HubParams): number {
-  const innerW = p.lumW + p.tol * 2;
-  const innerH = p.lumH + p.tol * 2;
+  const tol = socketTolerances(p);
+  const innerW = p.lumW + tol.x * 2;
+  const innerH = p.lumH + tol.y * 2;
   return Math.max(innerW, innerH);
 }
 
 /** Match round hub: socketLen = rodD × 2.5. */
 export function timberSocketLen(p: HubParams, innerH: number, wall: number): number {
   const stock = timberStock(p);
-  const depthFrac = THREE.MathUtils.clamp(p.socketDepth ?? 0.85, 0.55, 1.05);
   const minLen = innerH * 0.55 + wall * 2 + 4;
-  return Math.max(stock * 2.5 * (depthFrac / 0.85), minLen);
+  return socketLengthFromSettings(stock, p, minLen);
 }
 
 /** Match round hub: open-bore region depth = rodD × 1.3. */

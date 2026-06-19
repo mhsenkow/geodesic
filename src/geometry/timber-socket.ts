@@ -6,6 +6,7 @@ import {
   timberOuterDimsAtZ,
   timberSocketLen,
 } from './timber-organic-profile';
+import { socketTolerances } from './socket-fit';
 
 function prepGeo(g: THREE.BufferGeometry): THREE.BufferGeometry {
   let geo = g;
@@ -67,8 +68,9 @@ export interface TimberDims {
 }
 
 export function timberDims(p: HubParams): TimberDims {
-  const innerW = p.lumW + p.tol * 2;
-  const innerH = p.lumH + p.tol * 2;
+  const tol = socketTolerances(p);
+  const innerW = p.lumW + tol.x * 2;
+  const innerH = p.lumH + tol.y * 2;
   const wall = Math.max(2.5, p.wall);
   const outerW = innerW + wall * 2;
   const outerH = innerH + wall * 2;

@@ -9,6 +9,15 @@ import { finishManifoldHub } from './timber-finish';
 import { timberCoreRadius } from './timber-organic-profile';
 import { timberVoidInset } from './timber-junction';
 import { timberDims, type TimberDims } from './timber-socket';
+import {
+  addRoundFrictionRibs,
+  addRoundScrewBosses,
+  addTimberFrictionRibs,
+  addTimberScrewBosses,
+  ellipticCylinderAlongZ,
+  socketLengthFromSettings,
+  socketTolerances,
+} from './socket-fit';
 
 /* ------------------------------------------------------------------ *
  * Organic Manifold hub engine.
@@ -78,12 +87,6 @@ function alignZ(m: Manifold, dir: THREE.Vector3): Manifold {
   return transformManifold(m, frameForStrutAxisZ(dir, WORLD_UP));
 }
 
-/** Cylinder with its base at the origin, extending to z = h (center=false). */
-function cylinderAlongZ(h: number, r: number, segs: number): Manifold {
-  const Manifold = getManifold();
-  return Manifold.cylinder(h, r, r, segs, false);
-}
-
 function nodeSphereSegments(p: HubParams): number {
   return Math.max(28, Math.round((p.detail || 48) / 1.5));
 }
@@ -100,26 +103,35 @@ export function nodeSmoothRadius(p: HubParams): number {
 // ────────────────────────────── ROUND ──────────────────────────────
 
 interface RoundDims {
+  iRx: number;
+  iRy: number;
   iR: number;
   oR: number;
   strutR: number;
+  tipR: number;
   nodeR: number;
   strutLen: number;
   voidInset: number;
 }
 
 function roundDims(p: HubParams): RoundDims {
-  const iR = p.rodD / 2 + p.tol;
+  const tol = socketTolerances(p);
+  const iRx = p.rodD / 2 + tol.x;
+  const iRy = p.rodD / 2 + tol.y;
+  const iR = Math.max(iRx, iRy);
   const oR = iR + p.wall;
   const strutScale = p.subdStrutSize ?? 1;
   const meet = p.junctionMeet ?? 1;
-  const depthFrac = THREE.MathUtils.clamp(p.socketDepth ?? 0.85, 0.55, 1.05);
   const strutR = oR * strutScale;
+  // Tapered teardrop arm: tip is slimmer than the root but keeps a printable wall.
+  const taper = THREE.MathUtils.clamp(p.strutTaper ?? 1, 0.55, 1);
+  const tipR = Math.max(strutR * taper, iR + Math.max(1.4, p.wall * 0.45));
   const nodeR = oR * Math.max(1.04, p.bodyScale * 0.78) * meet;
-  const strutLen = p.rodD * 2.5 * (depthFrac / 0.85);
+  const strutLen = socketLengthFromSettings(p.rodD, p, p.rodD * 1.2);
   const boreDep = p.rodD * 1.3;
-  const voidInset = Math.max(strutLen - boreDep, strutLen * 0.32);
-  return { iR, oR, strutR, nodeR, strutLen, voidInset };
+  // Bore-through hollows the core; otherwise leave a solid seat at depth.
+  const voidInset = p.boreThrough ? 0 : Math.max(strutLen - boreDep, strutLen * 0.32);
+  return { iRx, iRy, iR, oR, strutR, tipR, nodeR, strutLen, voidInset };
 }
 
 /** Set screws crossing each round socket wall, for clamping the inserted tube. */
@@ -158,8 +170,10 @@ export function buildRoundNodeHubSolid(
   const segs = strutSegments(p);
 
   const outers: Manifold[] = [Manifold.sphere(d.nodeR, nodeSphereSegments(p))];
+  // Cone strut: fat root at the node, slimmer tip — tapered teardrop arm.
+  const strutTemplate = Manifold.cylinder(d.strutLen, d.strutR, d.tipR, segs, false);
   for (const dir of dirs) {
-    outers.push(alignZ(cylinderAlongZ(d.strutLen, d.strutR, segs), dir));
+    outers.push(alignZ(strutTemplate, dir));
   }
 
   let solid = dirs.length ? Manifold.union(outers) : outers[0];
@@ -167,27 +181,35 @@ export function buildRoundNodeHubSolid(
 
   if (dirs.length) {
     const boreLen = d.strutLen - d.voidInset + d.oR;
-    const voidTemplate = cylinderAlongZ(boreLen, d.iR, segs).translate(0, 0, d.voidInset);
+    const voidTemplate = ellipticCylinderAlongZ(boreLen, d.iRx, d.iRy, segs).translate(
+      0,
+      0,
+      d.voidInset
+    );
     const voids = dirs.map((dir) => alignZ(voidTemplate, dir));
     solid = Manifold.difference(solid, Manifold.union(voids));
   } else {
     const boreLen = d.strutLen - d.voidInset + d.oR;
-    const v = cylinderAlongZ(boreLen, d.iR, segs).translate(0, 0, d.voidInset);
+    const v = ellipticCylinderAlongZ(boreLen, d.iRx, d.iRy, segs).translate(0, 0, d.voidInset);
     solid = Manifold.difference(solid, v);
   }
 
   // Entry bevel: a conical lead-in at each socket mouth so the tube slides in.
   const ch = THREE.MathUtils.clamp(p.chamfer ?? 0, 0, p.wall * 0.95);
   if (ch > EPS && dirs.length) {
-    const Manifold2 = getManifold();
-    // cone: iR at the inner end (z = strutLen-ch) → iR+ch at the mouth (z = strutLen)
-    const coneTpl = Manifold2.cylinder(ch + EPS, d.iR, d.iR + ch, segs, false).translate(
+    // oval counterbore lead-in at the mouth so out-of-round tube still starts cleanly.
+    const coneTpl = ellipticCylinderAlongZ(ch + EPS, d.iRx + ch, d.iRy + ch, segs).translate(
       0,
       0,
       d.strutLen - ch
     );
     const cones = dirs.map((dir) => alignZ(coneTpl, dir));
     solid = Manifold.difference(solid, Manifold.union(cones));
+  }
+
+  if (dirs.length) {
+    solid = addRoundFrictionRibs(solid, dirs, d, p);
+    solid = addRoundScrewBosses(solid, dirs, d, p);
   }
 
   if (p.screwHoles && dirs.length) {
@@ -278,6 +300,11 @@ export function buildTimberNodeHubSolid(
       .translate(0, 0, d.socketLen - ch);
     const bevels = dirs.map((dir) => alignZ(bevelTpl, dir));
     solid = Manifold.difference(solid, Manifold.union(bevels));
+  }
+
+  if (dirs.length) {
+    solid = addTimberFrictionRibs(solid, dirs, d, p, inset);
+    solid = addTimberScrewBosses(solid, dirs, d, p);
   }
 
   if (p.screwHoles && dirs.length) {

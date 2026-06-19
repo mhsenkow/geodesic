@@ -46,7 +46,25 @@ export function unionPrintBase(hub: Manifold, p: HubParams): Manifold {
   const seated = hub.trimByPlane([0, 1, 0], trimY);
 
   const totalH = base.thickness + base.weldOverlap;
-  const plate = Manifold.cylinder(totalH, base.bottomRadius, base.topRadius, segs, false);
+  // Chamfered rim: the bottom contact ring is slightly inset and bevels outward,
+  // so there's no sharp bottom corner to lift off the bed.
+  const ch = Math.min(Math.max(base.thickness * 0.3, 0.8), 1.6);
+  const chamfer = Manifold.cylinder(ch, base.bottomRadius - ch, base.bottomRadius, segs, false);
+  const body = Manifold.cylinder(totalH - ch, base.bottomRadius, base.topRadius, segs, false).translate(
+    0,
+    0,
+    ch
+  );
+  let plate = Manifold.union(chamfer, body);
+
+  // Drainage / weight-saving vent up the axis (skip when bored straight through —
+  // the core is already open).
+  if (p.baseVent && !p.boreThrough) {
+    const ventR = Math.min(Math.max(base.topRadius * 0.22, 2.5), base.topRadius * 0.5);
+    const vent = Manifold.cylinder(totalH + base.thickness, ventR, ventR, Math.max(20, segs / 2), false);
+    plate = Manifold.difference(plate, vent.translate(0, 0, -EPS));
+  }
+
   const rot = transformManifold(plate, new THREE.Matrix4().makeRotationX(Math.PI / 2));
   const topY = trimY + base.weldOverlap * 0.25;
   const welded = rot.translate(0, topY - totalH, 0);

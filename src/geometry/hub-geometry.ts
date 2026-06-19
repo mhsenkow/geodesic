@@ -5,10 +5,12 @@ import { DOME_RADIUS, EPS } from '../types';
 import { createTimberHub } from './timber-hub';
 import { isManifoldReady } from './manifold-init';
 import { createRoundNodeHub, createTimberNodeHub } from './node-hub-manifold';
+import { createMetaballHub } from './metaball-hub';
 import { roundWeaverbirdOptions, shouldPolishHubMesh, weaverbirdSmooth } from './mesh-smooth';
 import { quatForStrutAxisY, WORLD_UP } from './hub-orient';
 import { junctionFlarePower } from './junction-profile';
 import { addBuildFoot, attachBuildFootWorld, choosePrintUp, estimateBuildFootRadius } from './hub-foot';
+import { socketLengthFromSettings, socketTolerances } from './socket-fit';
 
 export function smoothStep01(t: number): number {
   const x = Math.max(0, Math.min(1, t));
@@ -67,9 +69,10 @@ function buildOrganicSocketProfile(
 }
 
 function buildRoundHubMeshLathe(dirs: THREE.Vector3[], p: HubParams): THREE.BufferGeometry {
-  const iR = p.rodD / 2 + p.tol;
+  const tol = socketTolerances(p);
+  const iR = p.rodD / 2 + tol.max;
   const oR = iR + p.wall;
-  const sLen = p.rodD * 2.5;
+  const sLen = socketLengthFromSettings(p.rodD, p, p.rodD * 1.2);
   const bDep = p.rodD * 1.3;
   const strutScale = p.subdStrutSize ?? 1;
   const effectiveScale = p.bodyScale * (0.85 + strutScale * 0.15);
@@ -171,7 +174,7 @@ export function orientGeometryForSTL(geo: THREE.BufferGeometry): THREE.BufferGeo
 }
 
 export function previewHubScale(p: HubParams): number {
-  if (p.matType === 'round') return (DOME_RADIUS * 0.015) / (p.rodD / 2 + p.tol + p.wall);
+  if (p.matType === 'round') return (DOME_RADIUS * 0.015) / (p.rodD / 2 + socketTolerances(p).max + p.wall);
   const timberEnvelope = Math.max(p.lumW, p.lumH) / 2 + p.tol + p.wall;
   return (DOME_RADIUS * 0.022) / timberEnvelope;
 }
@@ -188,6 +191,7 @@ export function createHubFromDirs(dirs: THREE.Vector3[], p: HubParams): THREE.Bu
 
   if (isManifoldReady()) {
     try {
+      if ((p.hubStyle ?? 'organic') === 'metaball') return createMetaballHub(dirs, p);
       return p.matType === 'round' ? createRoundNodeHub(dirs, p) : createTimberNodeHub(dirs, p);
     } catch (err) {
       console.warn('Manifold hub build failed — falling back to legacy mesh.', err);

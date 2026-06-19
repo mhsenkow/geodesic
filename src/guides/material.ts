@@ -62,13 +62,19 @@ export interface MaterialEstimate {
   stockCost: number;
   /** 3D print */
   hubCount: number;
+  /** Solid model volume of all hubs (cm³). */
   printVolumeCm3: number;
+  /** Infill-adjusted filament volume actually extruded (cm³). */
+  filamentVolumeCm3: number;
   printMassG: number;
   filamentLengthM: number;
   printCost: number;
   /** Combined */
   totalCost: number;
 }
+
+/** Walls/shell always print solid; only the interior is reduced by infill. */
+const SHELL_FRACTION = 0.2;
 
 export function estimateMaterial(
   dome: DomeData,
@@ -104,9 +110,14 @@ export function estimateMaterial(
     hubCount += ht.verts.length;
   }
   const printVolumeCm3 = printVolumeMm3 / 1000;
-  const printMassG = printVolumeCm3 * Math.max(0.1, settings.filamentDensity);
+  // Effective filament = solid shell + infill-filled interior.
+  const infill = Math.min(1, Math.max(0.05, settings.printInfillPct / 100));
+  const fillFactor = SHELL_FRACTION + (1 - SHELL_FRACTION) * infill;
+  const filamentVolumeMm3 = printVolumeMm3 * fillFactor;
+  const filamentVolumeCm3 = filamentVolumeMm3 / 1000;
+  const printMassG = filamentVolumeCm3 * Math.max(0.1, settings.filamentDensity);
   const filamentArea = Math.PI * (FILAMENT_DIAMETER_MM / 2) ** 2; // mm²
-  const filamentLengthM = filamentArea > 0 ? printVolumeMm3 / filamentArea / 1000 : 0;
+  const filamentLengthM = filamentArea > 0 ? filamentVolumeMm3 / filamentArea / 1000 : 0;
   const printCost = (printMassG / 1000) * Math.max(0, settings.filamentPrice);
 
   return {
@@ -117,6 +128,7 @@ export function estimateMaterial(
     stockCost,
     hubCount,
     printVolumeCm3,
+    filamentVolumeCm3,
     printMassG,
     filamentLengthM,
     printCost,

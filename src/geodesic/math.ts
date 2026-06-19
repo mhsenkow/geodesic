@@ -1,6 +1,6 @@
-import type { DomeData, HubType, StrutType } from '../types';
+import type { BaseSolid, DomeData, HubType, StrutType } from '../types';
 import { DOME_RADIUS, EPS, HUB_COLORS } from '../types';
-import { ICOSAHEDRON_FACES, ICOSAHEDRON_VERTS } from './constants';
+import { BASE_SEEDS, ICOSAHEDRON_FACES, ICOSAHEDRON_VERTS } from './constants';
 
 export interface SphereData {
   verts: number[][];
@@ -9,7 +9,12 @@ export interface SphereData {
   adj: number[][];
 }
 
-export function genSphere(freq: number, rad: number = DOME_RADIUS): SphereData {
+export function genSphere(
+  freq: number,
+  rad: number = DOME_RADIUS,
+  base: BaseSolid = 'icosahedron'
+): SphereData {
+  const seed = BASE_SEEDS[base] ?? { verts: ICOSAHEDRON_VERTS, faces: ICOSAHEDRON_FACES };
   const vm = new Map<string, number>();
   const verts: number[][] = [];
   const faces: number[][] = [];
@@ -28,10 +33,10 @@ export function genSphere(freq: number, rad: number = DOME_RADIUS): SphereData {
     return i;
   }
 
-  for (const [ai, bi, ci] of ICOSAHEDRON_FACES) {
-    const a = ICOSAHEDRON_VERTS[ai];
-    const b = ICOSAHEDRON_VERTS[bi];
-    const c = ICOSAHEDRON_VERTS[ci];
+  for (const [ai, bi, ci] of seed.faces) {
+    const a = seed.verts[ai];
+    const b = seed.verts[bi];
+    const c = seed.verts[ci];
     const grid: number[][] = [];
     for (let i = 0; i <= freq; i++) {
       grid[i] = [];
@@ -77,6 +82,84 @@ export function genSphere(freq: number, rad: number = DOME_RADIUS): SphereData {
   return { verts, faces, edges, adj };
 }
 
+/**
+ * Goldberg / fullerene dual of a geodesic sphere — the actual "buckyball".
+ * Each original triangle face becomes a 3-valent vertex (its centroid), each
+ * original vertex becomes a polygon face (pentagon at 5-valent seeds, hexagon
+ * elsewhere). Struts run along dual edges; every hub is 3-way.
+ */
+export function dualizeSphere(sp: SphereData): SphereData {
+  const rad = Math.hypot(sp.verts[0][0], sp.verts[0][1], sp.verts[0][2]) || DOME_RADIUS;
+  const dverts: number[][] = sp.faces.map((f) => {
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (const vi of f) {
+      cx += sp.verts[vi][0];
+      cy += sp.verts[vi][1];
+      cz += sp.verts[vi][2];
+    }
+    const l = Math.hypot(cx, cy, cz) || 1;
+    return [(cx / l) * rad, (cy / l) * rad, (cz / l) * rad];
+  });
+
+  const ek = (a: number, b: number) => (a < b ? `${a},${b}` : `${b},${a}`);
+  const edgeFaces = new Map<string, number[]>();
+  sp.faces.forEach((f, fi) => {
+    for (let i = 0; i < f.length; i++) {
+      const k = ek(f[i], f[(i + 1) % f.length]);
+      const arr = edgeFaces.get(k);
+      if (arr) arr.push(fi);
+      else edgeFaces.set(k, [fi]);
+    }
+  });
+
+  const edges: number[][] = [];
+  const adj: number[][] = dverts.map(() => []);
+  for (const fs of edgeFaces.values()) {
+    if (fs.length === 2) {
+      const [a, b] = fs;
+      edges.push([Math.min(a, b), Math.max(a, b)]);
+      adj[a].push(b);
+      adj[b].push(a);
+    }
+  }
+
+  const vFaces: number[][] = sp.verts.map(() => []);
+  sp.faces.forEach((f, fi) => f.forEach((vi) => vFaces[vi].push(fi)));
+  const neighborsOfV = (v: number, face: number[]): [number, number] => {
+    const i = face.indexOf(v);
+    const n = face.length;
+    return [face[(i - 1 + n) % n], face[(i + 1) % n]];
+  };
+
+  const faces: number[][] = [];
+  for (let v = 0; v < sp.verts.length; v++) {
+    const fs = vFaces[v];
+    if (fs.length < 3) continue;
+    const ordered: number[] = [fs[0]];
+    let current = fs[0];
+    let w = neighborsOfV(v, sp.faces[current])[1];
+    let ok = true;
+    for (let g = 0; g < fs.length + 2; g++) {
+      const arr = edgeFaces.get(ek(v, w)) ?? [];
+      const next = arr.find((fi) => fi !== current);
+      if (next === undefined) {
+        ok = false;
+        break;
+      }
+      if (next === fs[0]) break;
+      ordered.push(next);
+      const [pp, qq] = neighborsOfV(v, sp.faces[next]);
+      w = pp === w ? qq : pp;
+      current = next;
+    }
+    if (ok && ordered.length >= 3) faces.push(ordered);
+  }
+
+  return { verts: dverts, faces, edges, adj };
+}
+
 export function truncDome(
   sp: SphereData,
   ratio: number,
@@ -98,17 +181,13 @@ export function truncDome(
     return onBaseRing && inDoorWedge;
   });
 
-  let kf = sp.faces.filter(([a, b, c]) => keep[a] && keep[b] && keep[c]);
+  let kf = sp.faces.filter((f) => f.every((v) => keep[v]));
   if (doorEnabled) {
-    kf = kf.filter(([a, b, c]) => !isDoor[a] && !isDoor[b] && !isDoor[c]);
+    kf = kf.filter((f) => f.every((v) => !isDoor[v]));
   }
 
   const used = new Set<number>();
-  kf.forEach(([a, b, c]) => {
-    used.add(a);
-    used.add(b);
-    used.add(c);
-  });
+  kf.forEach((f) => f.forEach((v) => used.add(v)));
 
   const o2n = new Map<number, number>();
   const nv: number[][] = [];
@@ -121,19 +200,17 @@ export function truncDome(
   }
 
   const nf = kf
-    .map(([a, b, c]) => [o2n.get(a)!, o2n.get(b)!, o2n.get(c)!])
-    .filter(([a, b, c]) => a !== undefined && b !== undefined && c !== undefined);
+    .map((f) => f.map((v) => o2n.get(v)!))
+    .filter((f) => f.every((v) => v !== undefined));
 
   const es = new Set<string>();
   const ne: number[][] = [];
   const na: number[][] = nv.map(() => []);
 
-  for (const [a, b, c] of nf) {
-    for (const [u, v] of [
-      [a, b],
-      [b, c],
-      [c, a],
-    ] as const) {
+  for (const f of nf) {
+    for (let i = 0; i < f.length; i++) {
+      const u = f[i];
+      const v = f[(i + 1) % f.length];
       const k = `${Math.min(u, v)},${Math.max(u, v)}`;
       if (!es.has(k)) {
         es.add(k);

@@ -1,6 +1,8 @@
 export type MaterialType = 'round' | 'rect';
-export type HubStyle = 'sharp' | 'organic';
+export type HubStyle = 'sharp' | 'organic' | 'metaball';
 export type UnitSystem = 'metric' | 'imperial';
+export type BaseSolid = 'icosahedron' | 'octahedron' | 'tetrahedron';
+export type GeoTopology = 'geodesic' | 'goldberg';
 
 export interface Vec3 {
   0: number;
@@ -45,6 +47,10 @@ export interface AppSettings {
   lumW: number;
   lumH: number;
   tol: number;
+  /** Socket tolerance across local X (mm). Defaults to tol for old saves. */
+  tolX: number;
+  /** Socket tolerance across local Y (mm). Defaults to tol for old saves. */
+  tolY: number;
   wall: number;
   flatBot: boolean;
   door: boolean;
@@ -74,6 +80,8 @@ export interface AppSettings {
   baseScale: number;
   /** Lumber insertion depth as fraction of lumber depth (0.55–1.05). */
   socketDepth: number;
+  /** Explicit insertion depth in mm. 0 = derive from socketDepth fraction. */
+  socketDepthMm: number;
   /** 0–1 mesh polish — Weaverbird (round) or Manifold smoothOut (timber). */
   surfaceSmooth: number;
   /** Round tube: loop-subdivide before Taubin smooth (inspector / export). */
@@ -89,6 +97,26 @@ export interface AppSettings {
   stockPrice: number;
   filamentDensity: number;
   filamentPrice: number;
+  /** Print infill % — scales the solid volume to estimate real filament use. */
+  printInfillPct: number;
+  /** Seed polyhedron for the geodesic subdivision. */
+  baseSolid: BaseSolid;
+  /** geodesic (triangulated struts) or goldberg (hex/pentagon buckyball dual). */
+  geoTopology: GeoTopology;
+  strutTaper: number;
+  boreThrough: boolean;
+  baseVent: boolean;
+  /** Printer nozzle diameter for min-wall checks. */
+  nozzleDia: number;
+  frictionRibs: boolean;
+  ribDepth: number;
+  ribCount: number;
+  screwBosses: boolean;
+  embossLabels: boolean;
+  alignmentNotches: boolean;
+  showOverhangHeatmap: boolean;
+  buildPlateW: number;
+  buildPlateD: number;
 }
 
 export interface HubParams {
@@ -97,6 +125,8 @@ export interface HubParams {
   lumW: number;
   lumH: number;
   tol: number;
+  tolX?: number;
+  tolY?: number;
   wall: number;
   bodyScale: number;
   chamfer: number;
@@ -115,10 +145,27 @@ export interface HubParams {
   baseThickness?: number;
   baseScale?: number;
   socketDepth?: number;
+  socketDepthMm?: number;
   surfaceSmooth?: number;
   meshSubdivide?: boolean;
   subdConnectionLength?: number;
   subdStrutSize?: number;
+  /** Strut tip radius as a fraction of its root — <1 gives tapered teardrop arms. */
+  strutTaper?: number;
+  /** Bore straight through the solid core (lighter, drains, prints faster). */
+  boreThrough?: boolean;
+  /** Drainage vent through the print base. */
+  baseVent?: boolean;
+  nozzleDia?: number;
+  frictionRibs?: boolean;
+  ribDepth?: number;
+  ribCount?: number;
+  screwBosses?: boolean;
+  embossLabels?: boolean;
+  alignmentNotches?: boolean;
+  showOverhangHeatmap?: boolean;
+  hubLabel?: string;
+  socketLabels?: string[];
 }
 
 export interface StlValidationResult {
@@ -144,6 +191,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lumW: 19,
   lumH: 38,
   tol: 0.3,
+  tolX: 0.3,
+  tolY: 0.3,
   wall: 5,
   flatBot: true,
   door: false,
@@ -170,6 +219,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   baseThickness: 4,
   baseScale: 1.35,
   socketDepth: 0.9,
+  socketDepthMm: 0,
   surfaceSmooth: 0.6,
   meshSubdivide: true,
   subdConnectionLength: 0,
@@ -180,6 +230,22 @@ export const DEFAULT_SETTINGS: AppSettings = {
   stockPrice: 6,
   filamentDensity: 1.24,
   filamentPrice: 25,
+  printInfillPct: 30,
+  baseSolid: 'icosahedron',
+  geoTopology: 'geodesic',
+  strutTaper: 0.88,
+  boreThrough: false,
+  baseVent: true,
+  nozzleDia: 0.4,
+  frictionRibs: true,
+  ribDepth: 0.35,
+  ribCount: 2,
+  screwBosses: true,
+  embossLabels: true,
+  alignmentNotches: true,
+  showOverhangHeatmap: false,
+  buildPlateW: 220,
+  buildPlateD: 220,
 };
 
 export const DOME_RADIUS = 5;

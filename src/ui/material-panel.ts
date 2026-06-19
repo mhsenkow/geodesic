@@ -66,8 +66,8 @@ export function renderMaterialEstimate(est: MaterialEstimate, settings: AppSetti
   if (printEl) {
     printEl.innerHTML = readoutRows([
       ['Hubs to print', `${est.hubCount}`],
-      ['Print volume', `${est.printVolumeCm3.toFixed(1)} cm³`],
-      ['Filament', `${Math.round(est.printMassG)} g · ${est.filamentLengthM.toFixed(1)} m`],
+      ['Solid volume', `${est.printVolumeCm3.toFixed(0)} cm³`],
+      [`Filament @ ${settings.printInfillPct}%`, `${Math.round(est.printMassG)} g · ${est.filamentLengthM.toFixed(1)} m`],
       ['Print cost', money(est.printCost), true],
     ]);
   }
