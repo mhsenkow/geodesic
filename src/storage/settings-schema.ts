@@ -37,7 +37,17 @@ function migrateSettings(raw: Partial<AppSettings> & { schemaVersion?: number })
   if (s.tolX == null) s.tolX = s.tol ?? DEFAULT_SETTINGS.tol;
   if (s.tolY == null) s.tolY = s.tol ?? DEFAULT_SETTINGS.tol;
   if (s.inspectorOpen == null) s.inspectorOpen = false;
-  return { ...DEFAULT_SETTINGS, ...s };
+  if (s.showStrutBodies == null) s.showStrutBodies = DEFAULT_SETTINGS.showStrutBodies;
+  if (s.strutColorMode !== 'material' && s.strutColorMode !== 'length') {
+    s.strutColorMode = DEFAULT_SETTINGS.strutColorMode;
+  }
+  const migrated = { ...DEFAULT_SETTINGS, ...s };
+  migrated.freq = Math.max(1, Math.min(8, Math.round(migrated.freq)));
+  migrated.trunc = Math.max(0.25, Math.min(1, migrated.trunc));
+  migrated.baseThickness = Math.max(2.5, Math.min(12, migrated.baseThickness));
+  migrated.baseScale = Math.max(1, Math.min(2, migrated.baseScale));
+  migrated.footMargin = Math.max(0, Math.min(20, migrated.footMargin));
+  return migrated;
 }
 
 export function normalizeSettings(settings: Partial<AppSettings>): AppSettings {

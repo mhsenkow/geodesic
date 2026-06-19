@@ -113,8 +113,15 @@ export function analyzePrintability(
   if (minWallMm < requiredWallMm) warnings.push(`Minimum wall ${minWallMm.toFixed(2)} mm is below 2× nozzle (${requiredWallMm.toFixed(2)} mm).`);
   if (maxEdgeMm > targetEdgeMm * 1.45) warnings.push(`Largest triangle edge ${maxEdgeMm.toFixed(1)} mm exceeds the ${targetEdgeMm.toFixed(1)} mm export target.`);
   if (fit?.meetAngleWarning) warnings.push(fit.meetAngleWarning);
+  if (fit?.socketDepthWarning) warnings.push(fit.socketDepthWarning);
   if (fit?.strutFitWarning) warnings.push(fit.strutFitWarning);
   if (fit?.firstLayerWarning) warnings.push(fit.firstLayerWarning);
+  if ((p.printFoot ?? true) && (p.baseThickness ?? 4) < Math.max(2.5, nozzle * 6)) {
+    warnings.push(`Build foot ${(p.baseThickness ?? 4).toFixed(1)} mm is thin for a ${nozzle.toFixed(1)} mm nozzle; thicker bases resist curling better.`);
+  }
+  if ((p.printFoot ?? true) && (p.footMargin ?? 6) < nozzle * 6) {
+    warnings.push(`Build foot margin ${(p.footMargin ?? 6).toFixed(1)} mm leaves little adhesion area; increase it for warp-prone materials.`);
+  }
 
   return {
     totalAreaMm2,
@@ -148,20 +155,24 @@ export function estimatePlatePack(
   let cursorY = padding;
   let rowDepth = 0;
   let maxX = padding;
+  let maxY = padding;
   const warnings: string[] = [];
   for (const ht of hubTypes) {
     const width = hubFootprintMm * (1 + ht.val * 0.08);
     const depth = hubFootprintMm * (1 + ht.val * 0.06);
-    if (cursorX + width + padding > plateW && cursorX > padding) {
-      cursorX = padding;
-      cursorY += rowDepth + padding;
-      rowDepth = 0;
+    for (let i = 0; i < Math.max(1, ht.verts.length); i++) {
+      if (cursorX + width + padding > plateW && cursorX > padding) {
+        cursorX = padding;
+        cursorY += rowDepth + padding;
+        rowDepth = 0;
+      }
+      maxX = Math.max(maxX, cursorX + width + padding);
+      maxY = Math.max(maxY, cursorY + depth + padding);
+      cursorX += width + padding;
+      rowDepth = Math.max(rowDepth, depth);
     }
-    maxX = Math.max(maxX, cursorX + width);
-    cursorX += width + padding;
-    rowDepth = Math.max(rowDepth, depth);
   }
-  const usedDepth = cursorY + rowDepth + padding;
+  const usedDepth = maxY;
   if (usedDepth > plateD) warnings.push(`Packed layout needs ~${usedDepth.toFixed(0)} mm depth (plate ${plateD} mm).`);
   if (maxX > plateW) warnings.push(`Packed layout needs ~${maxX.toFixed(0)} mm width (plate ${plateW} mm).`);
   return {

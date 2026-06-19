@@ -1,6 +1,7 @@
 import type { BaseSolid, DomeData, HubType, StrutType } from '../types';
 import { DOME_RADIUS, EPS, HUB_COLORS } from '../types';
 import { BASE_SEEDS, ICOSAHEDRON_FACES, ICOSAHEDRON_VERTS } from './constants';
+import { csvRow } from '../utils/csv';
 
 export interface SphereData {
   verts: number[][];
@@ -314,9 +315,9 @@ export function strutTableCsv(
   struts.forEach((s, i) => {
     const priority = i + 1;
     if (dome && hubTypes) {
-      rows.push(`${s.label},${s.length.toFixed(4)},${s.count},${materialLabel},${priority},,`);
+      rows.push(csvRow([s.label, s.length.toFixed(4), s.count, materialLabel, priority, '', '']));
     } else {
-      rows.push(`${s.label},${s.length.toFixed(4)},${s.count},${materialLabel},${priority}`);
+      rows.push(csvRow([s.label, s.length.toFixed(4), s.count, materialLabel, priority]));
     }
   });
   return rows.join('\n');

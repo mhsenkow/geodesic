@@ -8,7 +8,7 @@ Browser-based tool for designing **geodesic dome connector hubs** with Weaverbir
 
 ## Features
 
-- Icosahedral domes V1–V4 with truncation and optional door opening
+- Icosahedral / octahedral / tetrahedral domes V1–V8 with shallow-cap through full-sphere coverage and optional door opening
 - Round PVC/EMT/rod or rectangular timber socket geometry
 - **Watertight Manifold CSG hub engine** — union of node blob + strut shells,
   `smoothOut()` + `refineToLength()` for organic (Weaverbird-style) surfaces,
@@ -18,8 +18,8 @@ Browser-based tool for designing **geodesic dome connector hubs** with Weaverbir
   strut size, surface smoothing, and detail all driving real geometry
 - Watertight, fused **print base** for bed adhesion on each printable hub
 - Hub classification by valence + angle signature
-- Interactive 3D preview (prototype-cached for speed) + Hub Inspector with build plate guide
-- STL export with watertight validation, build base, batch export
+- Interactive 3D preview with physical strut bodies, length coloring, prototype-cached hubs, and Hub Inspector with build plate guide
+- STL export with watertight validation, socket/depth fit checks, tunable build base, and test/production ZIP bundles with manifests
 - Strut length CSV and hub placement SVG exports
 - Named presets with settings persistence
 - Keyboard shortcuts and mobile-friendly layout

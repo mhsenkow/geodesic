@@ -294,6 +294,11 @@ export class GeodesicApp {
         `2x nozzle target: ${report.requiredWallMm.toFixed(1)}mm`
       );
       addBadge(
+        fit.socketDepthWarning || !fit.strutFitOk ? 'warn' : 'ok',
+        `Socket ${fit.socketDepthMm.toFixed(0)}mm`,
+        `${fit.socketOpeningMm.label} opening. ${fit.socketDepthWarning ?? fit.strutFitWarning ?? 'Socket depth and clearance are in the expected range.'}`
+      );
+      addBadge(
         report.maxEdgeMm > report.targetEdgeMm * 1.45 ? 'warn' : 'ok',
         `Edge ${report.maxEdgeMm.toFixed(1)}mm`,
         `Target max edge: ${report.targetEdgeMm.toFixed(1)}mm`
@@ -337,7 +342,7 @@ export class GeodesicApp {
   async exportSelectedHub(): Promise<void> {
     if (!this.dome || this.settings.selHub == null) return;
     await withLoading(async () => {
-      const result = exportHubStl(
+      const result = await exportHubStl(
         this.settings.selHub!,
         this.hubTypes,
         this.dome!,
@@ -365,23 +370,42 @@ export class GeodesicApp {
     }, 'Exporting STL…');
   }
 
-  async exportAllHubs(): Promise<void> {
+  private exportMaterialLabel(): string {
+    const u = this.settings.unitSystem;
+    return this.settings.matType === 'round'
+      ? u === 'imperial'
+        ? `Round tube OD ${(this.settings.rodD / 25.4).toFixed(3)} in`
+        : `Round tube OD ${this.settings.rodD.toFixed(1)} mm`
+      : u === 'imperial'
+        ? `Timber ${(this.settings.lumW / 25.4).toFixed(2)}" × ${(this.settings.lumH / 25.4).toFixed(2)}"`
+        : `Timber ${this.settings.lumW.toFixed(0)}×${this.settings.lumH.toFixed(0)} mm`;
+  }
+
+  async exportAllHubs(mode: 'unique' | 'production' = 'unique'): Promise<void> {
     if (!this.dome) return;
     await withLoading(async () => {
+      const est = estimateMaterial(this.dome!, this.hubTypes, this.strutTypes, this.hubParams(), this.settings);
       const result = await exportAllHubsZip(
         this.hubTypes,
         this.dome!,
         this.settings,
         this.hubParams(),
-        (p) => showToast(`Exporting ${p.label} (${p.current}/${p.total})…`, 'info', 1200)
+        {
+          mode,
+          strutTypes: this.strutTypes,
+          materialLabel: this.exportMaterialLabel(),
+          bomEstimate: est,
+          onProgress: (p) => showToast(`Exporting ${p.label} (${p.current}/${p.total})…`, 'info', 1200),
+        }
       );
       if (!result) {
         showToast('Batch export failed.', 'error');
         return;
       }
       downloadBlob(result.blob, result.filename);
-      showToast(`Exported ${result.filename}`, 'success');
-    }, 'Zipping hub STLs…');
+      const warnText = result.warnings.length ? ` with ${result.warnings.length} warning(s)` : '';
+      showToast(`Exported ${result.filename}${warnText}`, result.warnings.length ? 'info' : 'success', 6000);
+    }, mode === 'production' ? 'Zipping production hub set…' : 'Zipping test hub set…');
   }
 
   async exportBuildPlate3mf(): Promise<void> {
@@ -427,15 +451,7 @@ export class GeodesicApp {
 
   exportStrutTable(): void {
     const u = this.settings.unitSystem;
-    const mat =
-      this.settings.matType === 'round'
-        ? u === 'imperial'
-          ? `Round tube OD ${(this.settings.rodD / 25.4).toFixed(3)} in`
-          : `Round tube OD ${this.settings.rodD.toFixed(1)} mm`
-        : u === 'imperial'
-          ? `Timber ${(this.settings.lumW / 25.4).toFixed(2)}" × ${(this.settings.lumH / 25.4).toFixed(2)}"`
-          : `Timber ${this.settings.lumW.toFixed(0)}×${this.settings.lumH.toFixed(0)} mm`;
-    const csv = strutTableCsv(this.strutTypes, mat, this.dome ?? undefined, this.hubTypes);
+    const csv = strutTableCsv(this.strutTypes, this.exportMaterialLabel(), this.dome ?? undefined, this.hubTypes);
     const diamLabel = formatMeters(this.settings.diam, u).replace(/\s/g, '');
     downloadText(csv, `strut_lengths_V${this.settings.freq}_${diamLabel}.csv`, 'text/csv');
     showToast('Strut length table downloaded.', 'success');
@@ -548,8 +564,10 @@ export class GeodesicApp {
       b.addEventListener('click', () => this.openInspector(i));
       c.appendChild(b);
     });
-    const exportAll = document.getElementById('btn-export-all') as HTMLButtonElement | null;
-    if (exportAll) exportAll.disabled = this.hubTypes.length === 0;
+    const exportTest = document.getElementById('btn-export-test-set') as HTMLButtonElement | null;
+    if (exportTest) exportTest.disabled = this.hubTypes.length === 0;
+    const exportProduction = document.getElementById('btn-export-production-set') as HTMLButtonElement | null;
+    if (exportProduction) exportProduction.disabled = this.hubTypes.length === 0;
     const exportPlate = document.getElementById('btn-export-plate') as HTMLButtonElement | null;
     if (exportPlate) exportPlate.disabled = this.hubTypes.length === 0;
   }
@@ -580,7 +598,11 @@ export class GeodesicApp {
     setVal('build-plate-d', s.buildPlateD);
     setVal('printFoot', s.printFoot);
     setVal('foot-margin', s.footMargin);
+    setVal('base-thickness', s.baseThickness);
+    setVal('base-scale', s.baseScale);
     setVal('showWireframe', s.showWire);
+    setVal('showStrutBodies', s.showStrutBodies);
+    setVal('strut-color-mode', s.strutColorMode);
     setVal('showHubs', s.showHubs);
     setVal('showMarkers', s.showMarkers);
     setVal('door-enabled', s.door);
@@ -663,6 +685,8 @@ export class GeodesicApp {
     if (sclVal) sclVal.textContent = s.subdConnectionLength.toFixed(2) + '×';
     const sssVal = document.getElementById('subd-strut-size-val');
     if (sssVal) sssVal.textContent = s.subdStrutSize.toFixed(2) + '×';
+    const baseScaleVal = document.getElementById('base-scale-val');
+    if (baseScaleVal) baseScaleVal.textContent = s.baseScale.toFixed(2) + '×';
 
     const isRound = s.matType === 'round';
     // Timber Style (Sharp/Organic) toggle is timber-only; the .rect-only rule

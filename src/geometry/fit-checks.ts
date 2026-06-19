@@ -5,6 +5,9 @@ import { socketTolerances, socketLengthFromSettings } from './socket-fit';
 export interface FitCheckReport {
   minMeetAngleDeg: number;
   meetAngleWarning: string | null;
+  socketOpeningMm: { x: number; y: number; label: string };
+  socketDepthMm: number;
+  socketDepthWarning: string | null;
   sampledMinWallMm: number;
   strutFitOk: boolean;
   strutFitWarning: string | null;
@@ -45,7 +48,34 @@ export function analyzeFitChecks(
 
   const tol = socketTolerances(p);
   const innerR = p.matType === 'round' ? p.rodD / 2 + tol.max : Math.hypot(p.lumW, p.lumH) / 2;
-  const socketLen = p.matType === 'round' ? socketLengthFromSettings(p.rodD, p, p.rodD * 1.2) : p.lumH * 1.2;
+  const socketLen =
+    p.matType === 'round'
+      ? socketLengthFromSettings(p.rodD, p, p.rodD * 1.2)
+      : socketLengthFromSettings(Math.max(p.lumW, p.lumH), p, p.lumH * 1.2);
+  const socketOpeningMm =
+    p.matType === 'round'
+      ? {
+          x: p.rodD + tol.x * 2,
+          y: p.rodD + tol.y * 2,
+          label:
+            Math.abs(tol.x - tol.y) < 0.001
+              ? `Ø ${(p.rodD + tol.max * 2).toFixed(2)} mm`
+              : `${(p.rodD + tol.x * 2).toFixed(2)} × ${(p.rodD + tol.y * 2).toFixed(2)} mm oval`,
+        }
+      : {
+          x: p.lumW + tol.x * 2,
+          y: p.lumH + tol.y * 2,
+          label: `${(p.lumW + tol.x * 2).toFixed(2)} × ${(p.lumH + tol.y * 2).toFixed(2)} mm`,
+        };
+  const stockDepth = p.matType === 'round' ? p.rodD : Math.max(p.lumW, p.lumH);
+  const minDepth = stockDepth * 0.62;
+  const maxDepth = stockDepth * 1.65;
+  const socketDepthWarning =
+    socketLen < minDepth
+      ? `Socket depth ${socketLen.toFixed(1)} mm is shallow for ${stockDepth.toFixed(1)} mm stock; seat more strut for better load transfer.`
+      : socketLen > maxDepth
+        ? `Socket depth ${socketLen.toFixed(1)} mm is deep for ${stockDepth.toFixed(1)} mm stock; fit may become over-constrained.`
+        : null;
   const minWallAtMeet = p.wall * (minMeet / 90);
   const strutFitOk = minWallAtMeet >= innerR * 0.15 + 1.2;
   const strutFitWarning = strutFitOk
@@ -70,6 +100,9 @@ export function analyzeFitChecks(
   return {
     minMeetAngleDeg: minMeet,
     meetAngleWarning,
+    socketOpeningMm,
+    socketDepthMm: socketLen,
+    socketDepthWarning,
     sampledMinWallMm: sampleMinWallMm(p, minMeet),
     strutFitOk,
     strutFitWarning,

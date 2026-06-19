@@ -16,6 +16,21 @@ describe('50-improvements utilities', () => {
     expect(s.previewQuality).toBe('balanced');
   });
 
+  it('settings schema clamps expanded geometry and print settings', () => {
+    const s = normalizeSettings({
+      freq: 99,
+      trunc: 2,
+      baseThickness: 0.5,
+      baseScale: 8,
+      strutColorMode: 'rainbow' as never,
+    });
+    expect(s.freq).toBe(8);
+    expect(s.trunc).toBe(1);
+    expect(s.baseThickness).toBe(2.5);
+    expect(s.baseScale).toBe(2);
+    expect(s.strutColorMode).toBe('length');
+  });
+
   it('imports design JSON', () => {
     const s = importDesignJson(JSON.stringify({ settings: { freq: 1, diam: 3 } }));
     expect(s.freq).toBe(1);

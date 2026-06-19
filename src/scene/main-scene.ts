@@ -1,9 +1,29 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { AppSettings, DomeData, HubParams, HubType } from '../types';
-import { HUB_COLORS } from '../types';
+import { DOME_RADIUS, HUB_COLORS } from '../types';
 import { disposeObject, previewHubScale } from '../geometry/hub-geometry';
 import { buildHubInstance, noteHubParamsFingerprint } from '../geometry/hub-prototype';
+import { frameForStrutAxisZ } from '../geometry/hub-orient';
+
+export type StrutPreviewStock =
+  | { kind: 'round'; radius: number }
+  | { kind: 'rect'; width: number; depth: number };
+
+export function strutPreviewStock(settings: AppSettings, hubParams: HubParams): StrutPreviewStock {
+  const worldUnitsPerMeter = (DOME_RADIUS * 2) / Math.max(0.1, settings.diam);
+  if (settings.matType === 'rect') {
+    return {
+      kind: 'rect',
+      width: Math.max(0.012, (hubParams.lumW / 1000) * worldUnitsPerMeter),
+      depth: Math.max(0.012, (hubParams.lumH / 1000) * worldUnitsPerMeter),
+    };
+  }
+
+  const materialRadiusM = (hubParams.rodD / 1000) * 0.5;
+  const realRadius = materialRadiusM * worldUnitsPerMeter;
+  return { kind: 'round', radius: THREE.MathUtils.clamp(realRadius * 1.6, 0.018, 0.11) };
+}
 
 export class MainScene {
   readonly scene = new THREE.Scene();
@@ -56,6 +76,76 @@ export class MainScene {
     });
   }
 
+  private strutColorForLength(length: number, minLen: number, maxLen: number): THREE.Color {
+    const span = Math.max(1e-6, maxLen - minLen);
+    const t = THREE.MathUtils.clamp((length - minLen) / span, 0, 1);
+    return new THREE.Color().setHSL(0.56 - t * 0.42, 0.82, 0.56);
+  }
+
+  private addStrutBodies(dome: DomeData, settings: AppSettings, hubParams: HubParams): void {
+    if (!dome.edges.length) return;
+    const stock = strutPreviewStock(settings, hubParams);
+    const radialSegments = settings.previewQuality === 'fast' ? 6 : settings.previewQuality === 'full' ? 12 : 8;
+    const geo =
+      stock.kind === 'rect'
+        ? new THREE.BoxGeometry(1, 1, 1)
+        : new THREE.CylinderGeometry(1, 1, 1, radialSegments, 1, false);
+    const mat = new THREE.MeshStandardMaterial({
+      color: stock.kind === 'rect' ? 0xc8b27a : 0xb6c8d9,
+      roughness: stock.kind === 'rect' ? 0.72 : 0.58,
+      metalness: settings.matType === 'round' ? 0.32 : 0.08,
+      transparent: true,
+      opacity: settings.showHubs ? 0.72 : 0.9,
+    });
+    const mesh = new THREE.InstancedMesh(geo, mat, dome.edges.length);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const mid = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const mat4 = new THREE.Matrix4();
+    const basis = new THREE.Matrix4();
+    const scale = new THREE.Vector3();
+    const rectScale = new THREE.Vector3();
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    const lengths = dome.edges.map(([ia, ib]) => {
+      a.set(...(dome.verts[ia] as [number, number, number]));
+      b.set(...(dome.verts[ib] as [number, number, number]));
+      return a.distanceTo(b);
+    });
+    const minLen = Math.min(...lengths);
+    const maxLen = Math.max(...lengths);
+
+    dome.edges.forEach(([ia, ib], i) => {
+      a.set(...(dome.verts[ia] as [number, number, number]));
+      b.set(...(dome.verts[ib] as [number, number, number]));
+      mid.addVectors(a, b).multiplyScalar(0.5);
+      dir.subVectors(b, a);
+      const len = dir.length();
+      if (len <= 1e-6) return;
+      dir.normalize();
+      if (stock.kind === 'rect') {
+        basis.copy(frameForStrutAxisZ(dir));
+        basis.scale(rectScale.set(stock.width, stock.depth, len));
+        mat4.copy(basis);
+        mat4.setPosition(mid);
+      } else {
+        quat.setFromUnitVectors(yAxis, dir);
+        scale.set(stock.radius, len, stock.radius);
+        mat4.compose(mid, quat, scale);
+      }
+      mesh.setMatrixAt(i, mat4);
+      if (settings.strutColorMode === 'length') {
+        mesh.setColorAt(i, this.strutColorForLength(len, minLen, maxLen));
+      }
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (settings.strutColorMode === 'length' && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    this.domeGroup.add(mesh);
+  }
+
   buildDomeVisual(
     dome: DomeData,
     hubTypes: HubType[],
@@ -69,6 +159,10 @@ export class MainScene {
     }
     this.markerMeshes = [];
 
+    if (settings.showStrutBodies) {
+      this.addStrutBodies(dome, settings, hubParams);
+    }
+
     if (settings.showWire) {
       const lineGeo = new THREE.BufferGeometry();
       const pts: THREE.Vector3[] = [];
@@ -80,7 +174,7 @@ export class MainScene {
       this.domeGroup.add(
         new THREE.LineSegments(
           lineGeo,
-          new THREE.LineBasicMaterial({ color: 0x335577, transparent: true, opacity: 0.6 })
+          new THREE.LineBasicMaterial({ color: 0x5f789d, transparent: true, opacity: settings.showStrutBodies ? 0.42 : 0.68 })
         )
       );
     }

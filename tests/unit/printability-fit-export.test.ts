@@ -4,7 +4,7 @@ import { DOME_RADIUS, DEFAULT_SETTINGS, type HubParams } from '../../src/types';
 import { genSphere, truncDome, classHubs, computeStrutTypes } from '../../src/geodesic/math';
 import { buildRoundNodeHubSolid } from '../../src/geometry/node-hub-manifold';
 import { analyzePrintability } from '../../src/geometry/printability';
-import { exportPackedBuildPlate3mf } from '../../src/geometry/export';
+import { exportAllHubsZip, exportPackedBuildPlate3mf } from '../../src/geometry/export';
 
 const dirs = [
   new THREE.Vector3(1, 0, 0),
@@ -94,5 +94,66 @@ describe('printability and fit features', () => {
     expect(result!.filename.endsWith('.3mf')).toBe(true);
     expect(result!.blob.size).toBeGreaterThan(1000);
     await expect(result!.blob.text()).resolves.toContain('3D/3dmodel.model');
+    const manifest = result!.manifest as {
+      hubs: Array<{ count: number; instances: Array<{ x: number; y: number }> }>;
+      buildPlate: { packedWidthMm: number; packedDepthMm: number };
+    };
+    const repeated = manifest.hubs.find((h) => h.count > 1);
+    expect(repeated).toBeDefined();
+    expect(repeated!.instances).toHaveLength(repeated!.count);
+    const uniquePositions = new Set(repeated!.instances.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`));
+    expect(uniquePositions.size).toBe(repeated!.count);
+    expect(manifest.buildPlate.packedWidthMm).toBeGreaterThan(0);
+    expect(manifest.buildPlate.packedDepthMm).toBeGreaterThan(0);
+  });
+
+  it('exports test and production ZIP bundles with metadata', async () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      freq: 1,
+      detail: 16,
+      embossLabels: false,
+      alignmentNotches: false,
+      frictionRibs: false,
+    };
+    const sphere = genSphere(settings.freq, DOME_RADIUS, settings.baseSolid);
+    const dome = truncDome(
+      sphere,
+      settings.trunc,
+      DOME_RADIUS,
+      settings.flatBot,
+      settings.door,
+      settings.doorW,
+      settings.diam
+    );
+    const hubs = classHubs(dome);
+    const struts = computeStrutTypes(dome, settings.diam);
+    const params = {
+      ...hubParams,
+      detail: 16,
+      embossLabels: false,
+      alignmentNotches: false,
+      frictionRibs: false,
+    };
+    const unique = await exportAllHubsZip(hubs, dome, settings, params, {
+      mode: 'unique',
+      strutTypes: struts,
+      materialLabel: 'test stock',
+    });
+    const production = await exportAllHubsZip(hubs, dome, settings, params, {
+      mode: 'production',
+      strutTypes: struts,
+      materialLabel: 'test stock',
+    });
+    expect(unique).not.toBeNull();
+    expect(production).not.toBeNull();
+    expect(unique!.filename).toContain('unique');
+    expect(production!.filename).toContain('production');
+    expect(production!.blob.size).toBeGreaterThan(unique!.blob.size);
+    const uniqueText = await unique!.blob.text();
+    expect(uniqueText).toContain('metadata/export-manifest.json');
+    expect(uniqueText).toContain('metadata/design.json');
+    expect(uniqueText).toContain('tables/strut_lengths.csv');
+    expect(uniqueText).toContain('README.txt');
   });
 });

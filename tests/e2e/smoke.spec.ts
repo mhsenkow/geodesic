@@ -68,6 +68,26 @@ test.describe('Geodesic app smoke', () => {
     expect(download.suggestedFilename()).toMatch(/strut_lengths.*\.csv/);
   });
 
+  test('exports test and production ZIP bundles', async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto('/');
+    await waitForAppReady(page);
+    await page.selectOption('#preset-select', 'playground-v1');
+    await waitForAppReady(page);
+
+    const [testSet] = await Promise.all([
+      page.waitForEvent('download'),
+      page.click('#btn-export-test-set'),
+    ]);
+    expect(testSet.suggestedFilename()).toMatch(/geodesic_hubs_unique.*\.zip/);
+
+    const [productionSet] = await Promise.all([
+      page.waitForEvent('download'),
+      page.click('#btn-export-production-set'),
+    ]);
+    expect(productionSet.suggestedFilename()).toMatch(/geodesic_hubs_production.*\.zip/);
+  });
+
   test('hub list matches stat count', async ({ page }) => {
     await page.goto('/');
     await waitForAppReady(page);

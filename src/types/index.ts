@@ -5,6 +5,7 @@ export type NozzlePreset = '0.2' | '0.4' | '0.6' | '0.8';
 export type UnitSystem = 'metric' | 'imperial';
 export type BaseSolid = 'icosahedron' | 'octahedron' | 'tetrahedron';
 export type GeoTopology = 'geodesic' | 'goldberg';
+export type StrutColorMode = 'material' | 'length';
 
 export interface Vec3 {
   0: number;
@@ -58,6 +59,8 @@ export interface AppSettings {
   door: boolean;
   doorW: number;
   showWire: boolean;
+  showStrutBodies: boolean;
+  strutColorMode: StrutColorMode;
   showHubs: boolean;
   showMarkers: boolean;
   selHub: number | null;
@@ -221,6 +224,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   door: false,
   doorW: 2,
   showWire: true,
+  showStrutBodies: true,
+  strutColorMode: 'length',
   showHubs: true,
   showMarkers: true,
   selHub: null,

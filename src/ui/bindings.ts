@@ -252,6 +252,7 @@ export function bindUi(app: GeodesicApp): void {
   document.getElementById('printFoot')?.addEventListener('change', (e) => {
     app.settings.printFoot = (e.target as HTMLInputElement).checked;
     app.updateInspector();
+    app.updateMaterialPanels();
     app.persist();
   });
 
@@ -260,6 +261,25 @@ export function bindUi(app: GeodesicApp): void {
     formatSliderValues(app.settings);
     app.updateInspector();
     app.persist();
+  });
+
+  document.getElementById('base-thickness')?.addEventListener('input', (e) => {
+    app.settings.baseThickness = +(e.target as HTMLInputElement).value;
+    formatSliderValues(app.settings);
+    app.updateInspector();
+    app.persist();
+  });
+
+  document.getElementById('base-scale')?.addEventListener('input', (e) => {
+    app.settings.baseScale = +(e.target as HTMLInputElement).value;
+    const el = document.getElementById('base-scale-val');
+    if (el) el.textContent = app.settings.baseScale.toFixed(2) + '×';
+    app.updateInspector();
+    app.persist();
+  });
+
+  ['foot-margin', 'base-thickness', 'base-scale'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', () => app.updateMaterialPanels());
   });
 
   document.getElementById('door-enabled')?.addEventListener('change', (e) => {
@@ -331,12 +351,18 @@ export function bindUi(app: GeodesicApp): void {
     })
   );
 
-  ['showWireframe', 'showHubs', 'showMarkers'].forEach((id, i) => {
-    const keys = ['showWire', 'showHubs', 'showMarkers'] as const;
+  ['showWireframe', 'showStrutBodies', 'showHubs', 'showMarkers'].forEach((id, i) => {
+    const keys = ['showWire', 'showStrutBodies', 'showHubs', 'showMarkers'] as const;
     document.getElementById(id)?.addEventListener('change', (e) => {
       app.settings[keys[i]] = (e.target as HTMLInputElement).checked;
       void app.buildDome(false);
     });
+  });
+
+  document.getElementById('strut-color-mode')?.addEventListener('change', (e) => {
+    app.settings.strutColorMode = (e.target as HTMLSelectElement).value as typeof app.settings.strutColorMode;
+    void app.buildDome(false);
+    app.persist();
   });
 
   const refinementMap: Record<string, 'bodyScale' | 'chamfer' | 'detail'> = {
@@ -528,7 +554,8 @@ export function bindUi(app: GeodesicApp): void {
 
   document.getElementById('btn-export-hub')?.addEventListener('click', () => void app.exportSelectedHub());
   document.getElementById('btn-export-glb')?.addEventListener('click', () => void app.exportSelectedGlb());
-  document.getElementById('btn-export-all')?.addEventListener('click', () => void app.exportAllHubs());
+  document.getElementById('btn-export-test-set')?.addEventListener('click', () => void app.exportAllHubs('unique'));
+  document.getElementById('btn-export-production-set')?.addEventListener('click', () => void app.exportAllHubs('production'));
   document.getElementById('btn-export-plate')?.addEventListener('click', () => void app.exportBuildPlate3mf());
   document.getElementById('btn-export-struts')?.addEventListener('click', () => app.exportStrutTable());
   document.getElementById('btn-export-map')?.addEventListener('click', () => app.exportHubMap());

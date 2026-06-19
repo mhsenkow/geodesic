@@ -42,9 +42,9 @@
     <div class="section-body">
       <div class="cg"><label for="base-solid">Base Shape</label><select id="base-solid"><option value="icosahedron" selected>Icosahedron (20-face · buckyball)</option><option value="octahedron">Octahedron (8-face)</option><option value="tetrahedron">Tetrahedron (4-face)</option></select><p class="hint-text">Seed polyhedron the geodesic grid subdivides. Icosahedron is the classic geodesic/buckyball; coarser seeds give bolder facets.</p></div>
       <div class="cg"><label for="geo-topology">Topology</label><select id="geo-topology"><option value="geodesic" selected>Geodesic (triangulated struts)</option><option value="goldberg">Goldberg / Fullerene (hex + pentagon, all 3-way hubs)</option></select><p class="hint-text">Goldberg is the true buckyball dual — every hub is a clean 3-way join.</p></div>
-      <div class="cg"><label>Frequency (V-Level)</label><div class="cr"><input type="range" id="frequency" min="1" max="6" value="2" step="1"><span class="rv" id="freq-val">V2</span></div></div>
+      <div class="cg"><label>Frequency (V-Level)</label><div class="cr"><input type="range" id="frequency" min="1" max="8" value="2" step="1"><span class="rv" id="freq-val">V2</span></div><p class="hint-text">Higher V-levels add more struts and unique hub types; V7–V8 are best with Fast preview.</p></div>
       <div class="cg"><label id="label-diameter">Dome Diameter (m)</label><input type="number" id="diameter" value="4.0" step="0.5" min="1" max="30"></div>
-      <div class="cg"><label>Truncation</label><select id="truncation"><option value="0.5">½ Dome</option><option value="0.625" selected>⅝ Dome (Flat)</option><option value="0.75">¾ Dome</option></select></div>
+      <div class="cg"><label>Coverage</label><select id="truncation"><option value="0.375">⅜ Low Cap</option><option value="0.4375">7⁄16 Shallow Dome</option><option value="0.5">½ Hemisphere</option><option value="0.5625">9⁄16 Raised Dome</option><option value="0.625" selected>⅝ Classic Dome</option><option value="0.6667">⅔ Tall Dome</option><option value="0.75">¾ High Dome</option><option value="1">Full Sphere</option></select></div>
       <div class="toggle-row"><span>Flat Base Ring</span><input type="checkbox" class="toggle" id="flat-base" checked title="Adds a horizontal base ring at the truncation cut"></div>
       <div class="toggle-row"><span>Door Opening</span><input type="checkbox" class="toggle" id="door-enabled"></div>
       <div class="cg" id="door-width-group"><label id="label-door-width">Door Width (m)</label><input type="number" id="door-width" value="2" step="0.25" min="0.5" max="6"><p class="hint-text" id="door-width-hint">Max ~85% of dome diameter</p></div>
@@ -90,6 +90,8 @@
       <div class="cg"><label id="label-wall">Wall Thickness (mm)</label><input type="number" id="wallThickness" value="5" step="0.5" min="2" max="15"></div>
       <div class="toggle-row"><span>Build Surface Foot</span><input type="checkbox" class="toggle" id="printFoot" checked></div>
       <div class="cg"><label id="label-foot-margin">Build Foot Margin (mm)</label><div class="cr"><input type="range" id="foot-margin" min="0" max="12" value="6" step="0.5"><span class="rv" id="foot-margin-val">6.0mm</span></div></div>
+      <div class="cg"><label id="label-base-thickness">Base Thickness (mm)</label><div class="cr"><input type="range" id="base-thickness" min="2.5" max="9" value="4" step="0.5"><span class="rv" id="base-thickness-val">4.0mm</span></div></div>
+      <div class="cg"><label>Build Foot Size</label><div class="cr"><input type="range" id="base-scale" min="1" max="1.8" value="1.35" step="0.05"><span class="rv" id="base-scale-val">1.35×</span></div></div>
     </div>
   </div>
 
@@ -97,6 +99,8 @@
     <div class="section-header"><span>◎ Display</span><span class="chv">▾</span></div>
     <div class="section-body">
       <div class="toggle-row"><span>Wireframe</span><input type="checkbox" class="toggle" id="showWireframe" checked></div>
+      <div class="toggle-row"><span>Rendered Struts</span><input type="checkbox" class="toggle" id="showStrutBodies" checked></div>
+      <div class="cg"><label>Strut Color</label><select id="strut-color-mode"><option value="length" selected>Color by Length</option><option value="material">Material Color</option></select></div>
       <div class="toggle-row"><span>Show Hubs on Dome</span><input type="checkbox" class="toggle" id="showHubs" checked></div>
       <div class="toggle-row"><span>Vertex Markers</span><input type="checkbox" class="toggle" id="showMarkers" checked></div>
       <div class="cg"><label>Dome Preview Quality</label><select id="preview-quality"><option value="fast">Fast (markers + LOD)</option><option value="balanced" selected>Balanced</option><option value="full">Full (slow)</option></select><p class="hint-text">Preview caps detail at 24–36; export always uses ≥64 segments.</p></div>
@@ -110,7 +114,8 @@
       <div class="kbd-hint">Click vertex · I open · ← → cycle · E export · Esc close</div>
       <div class="hub-list" id="hub-list"></div>
       <div class="btn-row">
-        <button class="btn btn-secondary" id="btn-export-all" type="button" disabled>Export All Hubs (ZIP)</button>
+        <button class="btn btn-secondary" id="btn-export-test-set" type="button" disabled>Export Test Set (ZIP)</button>
+        <button class="btn btn-secondary" id="btn-export-production-set" type="button" disabled>Export Production Set (ZIP)</button>
         <button class="btn btn-secondary" id="btn-export-plate" type="button">Export Build Plate (3MF)</button>
         <button class="btn btn-secondary" id="btn-export-struts" type="button">Export Strut Lengths (CSV)</button>
         <button class="btn btn-secondary" id="btn-export-bom" type="button">Export BOM (CSV)</button>

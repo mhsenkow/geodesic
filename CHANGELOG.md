@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here. Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-06-19
+
+### Added
+
+- **Rendered strut bodies** in the dome preview with length-based coloring and material mode toggle.
+- **Expanded dome coverage** — shallow cap through full sphere truncation presets; frequency slider now V1–V8.
+- **Test Set / Production Set ZIP exports** — bundles include STLs, manifest, design JSON, strut table, optional BOM, and README.
+- **Build foot tuning** in the slicer panel — base thickness and foot size sliders wired to export geometry.
+- **Inspector socket fit readouts** — modeled opening and depth checks before batch export.
+- Lazy-loaded STL/GLTF exporters for smaller initial bundle; shared CSV escaping utility.
+- Unit, e2e, and export tests for strut preview and ZIP bundle workflows.
+
+### Changed
+
+- Export buttons split into **Test Set** (one of each hub type) and **Production Set** (full quantity).
+- Print guide and architecture docs updated for the new export and preview workflows.
+
 ## [1.8.0] - 2026-06-19
 
 ### Added

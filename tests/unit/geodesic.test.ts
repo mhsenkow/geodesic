@@ -31,6 +31,15 @@ describe('truncDome', () => {
     const withDoor = truncDome(sp, 0.625, DOME_RADIUS, true, true, 2, 4);
     expect(withDoor.verts.length).toBeLessThanOrEqual(noDoor.verts.length);
   });
+
+  it('supports shallow caps through full-sphere coverage', () => {
+    const sp = genSphere(3, DOME_RADIUS);
+    const cap = truncDome(sp, 0.375, DOME_RADIUS, true, false, 2, 4);
+    const full = truncDome(sp, 1, DOME_RADIUS, true, false, 2, 4);
+    expect(cap.verts.length).toBeGreaterThan(0);
+    expect(full.verts.length).toBeGreaterThan(cap.verts.length);
+    expect(full.verts.length).toBeLessThanOrEqual(sp.verts.length);
+  });
 });
 
 describe('classHubs', () => {

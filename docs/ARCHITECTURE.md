@@ -22,7 +22,7 @@ Base polyhedron (icosa / octa / tetra)
 | Metaball | SDF `levelSet` + socket booleans | Yes |
 | Hybrid | Metaball shell with boosted smooth blend | Yes |
 
-Preview uses **lower detail** (24–36 segments) and optional **LOD** (fast/balanced/full). Export forces **detail ≥ 64** and `refineToLength` for printable triangle size.
+Preview uses **lower detail** (24–36 segments), optional **LOD** (fast/balanced/full), and instanced strut bodies for legible stock-scale framing. Export forces **detail ≥ 64** and `refineToLength` for printable triangle size.
 
 ## Caching
 
@@ -32,8 +32,10 @@ Preview uses **lower detail** (24–36 segments) and optional **LOD** (fast/bala
 ## Export conventions
 
 - Print frame: **+Y up**, seated on bed, then `orientGeometryForSTL` rotates to **Z-up** for slicers.
+- Build-foot thickness/scale are export geometry settings and are included in validation/material estimates.
 - Embossed labels: Manifold **boolean union** (not mesh merge).
-- 3MF: deduplicated vertices; `<item>` count = hub vertex quantity per type.
+- ZIP bundles include STLs plus manifest, design JSON, strut table, optional BOM, and README.
+- 3MF: deduplicated vertices; every physical hub copy gets a packed `<item>` transform.
 
 ## Settings
 
