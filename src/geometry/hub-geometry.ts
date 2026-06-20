@@ -193,9 +193,19 @@ export function createHubFromDirs(dirs: THREE.Vector3[], p: HubParams): THREE.Bu
   if (isManifoldReady()) {
     try {
       const style = effectiveHubStyle(p);
-      if (style === 'metaball') return createMetaballHub(dirs, p);
-      if (style === 'hybrid') return createMetaballHub(dirs, { ...p, hubStyle: 'metaball', surfaceSmooth: (p.surfaceSmooth ?? 0.6) * 1.05 });
-      return p.matType === 'round' ? createRoundNodeHub(dirs, p) : createTimberNodeHub(dirs, p);
+      // Round tube: metaball/hybrid produce the amorphous SDF blob look.
+      if (p.matType === 'round') {
+        if (style === 'metaball') return createMetaballHub(dirs, p);
+        if (style === 'hybrid')
+          return createMetaballHub(dirs, { ...p, hubStyle: 'metaball', surfaceSmooth: (p.surfaceSmooth ?? 0.6) * 1.05 });
+        return createRoundNodeHub(dirs, p);
+      }
+      // Timber: a marching-cubes SDF blob can't represent the flat faces a
+      // rectangular socket needs, so metaball/hybrid fall back to the
+      // crisp-socket organic node hub rather than producing unusable geometry.
+      const blobby = style === 'metaball' || style === 'hybrid';
+      const timberParams = blobby ? { ...p, hubStyle: 'organic' as const } : p;
+      return createTimberNodeHub(dirs, timberParams);
     } catch (err) {
       console.warn('Manifold hub build failed — falling back to legacy mesh.', err);
     }
@@ -237,7 +247,14 @@ export function createHub(
   d: DomeData,
   p: HubParams
 ): THREE.BufferGeometry | null {
-  return createHubFromDirs(hubDirsFromVertex(d, vidx), p);
+  return createHubFromDirs(hubDirsFromVertex(d, vidx), { ...p, rollRefUp: outwardRadial(d, vidx) });
+}
+
+/** Dome center → vertex direction; the roll reference for rectangular sockets. */
+export function outwardRadial(d: DomeData, vidx: number): [number, number, number] {
+  const v = d.verts[vidx];
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / len, v[1] / len, v[2] / len];
 }
 
 export function createBuildGuide(geo: THREE.BufferGeometry, p: HubParams): THREE.Group {

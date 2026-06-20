@@ -127,7 +127,11 @@ export class MainScene {
       if (len <= 1e-6) return;
       dir.normalize();
       if (stock.kind === 'rect') {
-        basis.copy(frameForStrutAxisZ(dir));
+        // Roll the bar against the dome radial at its midpoint — the same
+        // reference the hub sockets use — so the rectangular cross-section
+        // registers square into the socket instead of twisting.
+        const rollUp = mid.lengthSq() > 1e-6 ? mid.clone().normalize() : undefined;
+        basis.copy(frameForStrutAxisZ(dir, rollUp));
         basis.scale(rectScale.set(stock.width, stock.depth, len));
         mat4.copy(basis);
         mat4.setPosition(mid);

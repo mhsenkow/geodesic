@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here. Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] - 2026-06-18
+
+### Added
+
+- **Shared socket geometry** (`socket-geometry.ts`) — single source of truth for round and timber openings used by mesh, fit checks, and strut cut math.
+- **Strut cut accuracy** — true cut length (chord minus both socket insets), insertion depth, seat-bevel angle, and hub-pair metadata in strut tables and exports.
+- **Expanded materials catalog** — straws through 2×4 lumber, PVC/EMT, bamboo, craft sticks; density, modulus, cost, and stock-length properties.
+- **Export enrichments** — cut sheet CSV, vertex coordinates, shopping-list README, fastener counts, per-stick adjacency columns.
+- **Craft stick presets** — popsicle / jumbo craft / paint stirrer dome presets.
+- **CI typecheck gate** and Playwright browser cache; legacy hub fallback and strut-accuracy regression tests.
+
+### Fixed
+
+- **Dome hub alignment** — correspondence scoring replaces broken socket pairing; 0° residual on full icosphere and regression test coverage.
+- **Timber hub quality** — gentler organic smooth plan keeps flat socket faces; Metaball/Hybrid route to crisp organic timber builds.
+- **Rectangular timber roll** — wide face registers square on strut bodies after prototype rotation.
+
 ## [1.9.0] - 2026-06-19
 
 ### Added

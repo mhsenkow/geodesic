@@ -36,9 +36,19 @@ export interface HubType {
 }
 
 export interface StrutType {
+  /** Hub-center to hub-center chord length — the design dimension, meters. */
   length: number;
+  /** Physical cut length after subtracting how far the strut seats into a hub at each end, meters. */
+  cutLength: number;
+  /** How far the strut engages into the socket at each end, mm (reference). */
+  insertionDepthMm: number;
   count: number;
   label: string;
+  /** Hub-type label pairs this strut length joins, e.g. ["H1–H3", "H3–H3"]. */
+  hubPairs?: string[];
+  /** Approx end-cut bevel from a square cut, degrees — the tilt to seat the
+   *  strut end flush against a sphere-tangent hub face / cover panel. */
+  seatBevelDeg?: number;
 }
 
 export interface AppSettings {
@@ -190,6 +200,10 @@ export interface HubParams {
   junctionDrip?: number;
   surfaceNoise?: number;
   hubStyleBlend?: number;
+  /** Outward radial at the hub (dome center → vertex), used as the roll
+   *  reference so rectangular timber sockets orient their wide face
+   *  consistently (and survive prototype rotation). */
+  rollRefUp?: [number, number, number];
   treeSupportBase?: boolean;
   previewQuality?: PreviewQuality;
 }

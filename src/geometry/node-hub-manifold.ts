@@ -15,7 +15,7 @@ import {
   addTimberFrictionRibs,
   addTimberScrewBosses,
   ellipticCylinderAlongZ,
-  socketLengthFromSettings,
+  roundSocketGeometry,
   socketTolerances,
 } from './socket-fit';
 import { styleSmoothScale } from './smooth-curves';
@@ -51,8 +51,21 @@ function smoothPlan(p: HubParams, baseSharpAngle: number): SmoothPlan {
   const t = THREE.MathUtils.clamp(p.surfaceSmooth ?? 0.55, 0, 1);
   const conn = THREE.MathUtils.clamp(p.subdConnectionLength ?? 0, 0, 3);
   const styleScale = styleSmoothScale(p.hubStyle, t);
-  // More smoothing → fold more edges into the blend (higher angle threshold)
-  // and add a larger fillet to the edges that stay sharp.
+
+  // Rectangular timber sockets need flat faces and crisp ~90° edges so a flat
+  // 2×4 seats fully. Keep the sharp-angle threshold well under 90° (box edges
+  // stay crisp) and use a GENTLE fillet — a large minSmoothness balloons the
+  // boxy union into the lumpy "crumpled-foil" surface. Round tube has no flat
+  // faces to protect, so it keeps the original aggressive blend.
+  if (p.matType === 'rect') {
+    return {
+      minSharpAngle: THREE.MathUtils.clamp(baseSharpAngle + t * 8 - conn * 6, 48, 62),
+      minSmoothness: THREE.MathUtils.clamp(0.34 + styleScale * 0.22 - conn * 0.08, 0.3, 0.6),
+    };
+  }
+
+  // Round: more smoothing → fold more edges into the blend (higher angle
+  // threshold) and add a larger fillet to the edges that stay sharp.
   const minSharpAngle = THREE.MathUtils.clamp(
     baseSharpAngle + t * 34 - conn * 9,
     40,
@@ -85,8 +98,19 @@ function smoothAndRefine(
   return solid.smoothOut(minSharpAngle, minSmoothness).refineToLength(refineLength(featureSize, p, opts));
 }
 
-function alignZ(m: Manifold, dir: THREE.Vector3): Manifold {
-  return transformManifold(m, frameForStrutAxisZ(dir, WORLD_UP));
+function alignZ(m: Manifold, dir: THREE.Vector3, up: THREE.Vector3 = WORLD_UP): Manifold {
+  return transformManifold(m, frameForStrutAxisZ(dir, up));
+}
+
+/** Roll reference for rectangular sockets: the hub's outward radial (so the
+ *  lumber's wide face sits consistently tangent to the dome), falling back to
+ *  world-up when none is supplied. */
+function timberRollUp(p: HubParams): THREE.Vector3 {
+  if (p.rollRefUp) {
+    const v = new THREE.Vector3(...p.rollRefUp);
+    if (v.lengthSq() > 1e-9) return v.normalize();
+  }
+  return WORLD_UP;
 }
 
 function nodeSphereSegments(p: HubParams): number {
@@ -129,10 +153,11 @@ function roundDims(p: HubParams): RoundDims {
   const taper = THREE.MathUtils.clamp(p.strutTaper ?? 1, 0.55, 1);
   const tipR = Math.max(strutR * taper, iR + Math.max(1.4, p.wall * 0.45));
   const nodeR = oR * Math.max(1.04, p.bodyScale * 0.78) * meet;
-  const strutLen = socketLengthFromSettings(p.rodD, p, p.rodD * 1.2);
-  const boreDep = p.rodD * 1.3;
-  // Bore-through hollows the core; otherwise leave a solid seat at depth.
-  const voidInset = p.boreThrough ? 0 : Math.max(strutLen - boreDep, strutLen * 0.32);
+  // Socket length + floor depth come from the shared source of truth so the
+  // printed bore and the reported strut cut length can never disagree.
+  const sg = roundSocketGeometry(p);
+  const strutLen = sg.socketLenMm;
+  const voidInset = sg.floorFromCenterMm;
   return { iRx, iRy, iR, oR, strutR, tipR, nodeR, strutLen, voidInset };
 }
 
@@ -231,7 +256,8 @@ function subtractTimberScrewHoles(
   hub: Manifold,
   dirs: THREE.Vector3[],
   d: TimberDims,
-  p: HubParams
+  p: HubParams,
+  up: THREE.Vector3 = WORLD_UP
 ): Manifold {
   const Manifold = getManifold();
   const r = Math.max(1.6, (p.screwDia ?? 4.2) / 2);
@@ -240,7 +266,7 @@ function subtractTimberScrewHoles(
   const holes: Manifold[] = [];
 
   for (const dir of dirs) {
-    const frame = frameForStrutAxisZ(dir, WORLD_UP);
+    const frame = frameForStrutAxisZ(dir, up);
     const lx = new THREE.Vector3();
     const ly = new THREE.Vector3();
     const lz = new THREE.Vector3();
@@ -268,10 +294,14 @@ export function buildTimberNodeHubSolid(
   const feature = Math.max(d.outerW, d.outerH) * 0.5;
   // Timber keeps flat socket faces unless smoothing is pushed high.
   const baseSharpAngle = 52;
+  // Roll every socket of this hub against a shared reference so the lumber's
+  // wide face is consistent — otherwise a rotated prototype's rectangular
+  // sockets land twisted relative to the (world-up) strut bodies.
+  const hubUp = timberRollUp(p);
 
   const outerTemplate = rectPrismAlongZ(d.outerW, d.outerH, d.socketLen);
   const outers: Manifold[] = dirs.length
-    ? dirs.map((dir) => alignZ(outerTemplate, dir))
+    ? dirs.map((dir) => alignZ(outerTemplate, dir, hubUp))
     : [outerTemplate];
 
   const coreR = timberCoreRadius(d, p) * (p.junctionMeet ?? 1);
@@ -283,7 +313,7 @@ export function buildTimberNodeHubSolid(
   const boreLen = Math.max(d.socketLen - inset + d.wall, d.innerH * 0.6);
   const voidTemplate = rectPrismAlongZ(d.innerW, d.innerH, boreLen).translate(0, 0, inset);
   if (dirs.length) {
-    const voids = dirs.map((dir) => alignZ(voidTemplate, dir));
+    const voids = dirs.map((dir) => alignZ(voidTemplate, dir, hubUp));
     solid = Manifold.difference(solid, Manifold.union(voids));
   } else {
     solid = Manifold.difference(solid, voidTemplate);
@@ -300,17 +330,17 @@ export function buildTimberNodeHubSolid(
     const bevelTpl = CrossSection.square([d.innerW, d.innerH], true)
       .extrude(ch + EPS, 1, 0, scaleTop, false)
       .translate(0, 0, d.socketLen - ch);
-    const bevels = dirs.map((dir) => alignZ(bevelTpl, dir));
+    const bevels = dirs.map((dir) => alignZ(bevelTpl, dir, hubUp));
     solid = Manifold.difference(solid, Manifold.union(bevels));
   }
 
   if (dirs.length) {
-    solid = addTimberFrictionRibs(solid, dirs, d, p, inset);
-    solid = addTimberScrewBosses(solid, dirs, d, p);
+    solid = addTimberFrictionRibs(solid, dirs, d, p, inset, hubUp);
+    solid = addTimberScrewBosses(solid, dirs, d, p, hubUp);
   }
 
   if (p.screwHoles && dirs.length) {
-    solid = subtractTimberScrewHoles(solid, dirs, d, p);
+    solid = subtractTimberScrewHoles(solid, dirs, d, p, hubUp);
   }
   return solid;
 }

@@ -26,7 +26,12 @@ export function genSphere(
     const nx = (x / l) * rad;
     const ny = (y / l) * rad;
     const nz = (z / l) * rad;
-    const k = `${nx.toFixed(7)},${ny.toFixed(7)},${nz.toFixed(7)}`;
+    // Weld duplicates on the *unit* direction so the tolerance is relative to
+    // radius — an absolute 1e-7 grid would mis-weld at large rad / odd scales.
+    const ux = x / l;
+    const uy = y / l;
+    const uz = z / l;
+    const k = `${ux.toFixed(6)},${uy.toFixed(6)},${uz.toFixed(6)}`;
     if (vm.has(k)) return vm.get(k)!;
     const i = verts.length;
     verts.push([nx, ny, nz]);
@@ -279,26 +284,104 @@ export function classHubs(d: DomeData): HubType[] {
   return types as HubType[];
 }
 
-export function computeStrutTypes(d: DomeData, scaleToMeters: number): StrutType[] {
-  const lengths = new Map<string, { length: number; count: number }>();
+/** Per-vertex socket geometry, supplied by the geometry layer so the pure math
+ *  can turn center-to-center chords into real cut lengths. */
+export interface VertexSocket {
+  /** Distance from hub center to the socket floor (deepest seat), mm. */
+  floorMm: number;
+  /** How far the strut engages before bottoming out, mm. */
+  seatMm: number;
+}
+
+export interface StrutComputeOptions {
+  /** Socket geometry per dome vertex; lets cut length = chord − floorA − floorB. */
+  vertexSocket?: VertexSocket[];
+  /** Hub-type label per dome vertex, for strut→hub adjacency. */
+  vertexHubLabel?: string[];
+  /** Cluster strut lengths within this tolerance (meters) into one type.
+   *  0 keeps the legacy exact 0.1 mm grouping. ~0.0005 (0.5 mm) is buildable. */
+  clusterToleranceM?: number;
+}
+
+/**
+ * Strut types for the dome. `length` is the geodesic chord (hub center to hub
+ * center — the design dimension and what chord-factor tables list); `cutLength`
+ * is what you actually saw, after the strut seats `floorMm` into a hub at each
+ * end. Struts are grouped by *cut* length within a buildable tolerance, since
+ * that is the number a builder sets their stop block to.
+ */
+export function computeStrutTypes(
+  d: DomeData,
+  scaleToMeters: number,
+  opts: StrutComputeOptions = {}
+): StrutType[] {
+  const sockets = opts.vertexSocket;
+  const hubLabels = opts.vertexHubLabel;
+  const tolM = Math.max(0, opts.clusterToleranceM ?? 0);
+  const worldToM = scaleToMeters / (DOME_RADIUS * 2);
+
+  interface Acc {
+    lengthSum: number;
+    cutSum: number;
+    seatSum: number;
+    bevelSum: number;
+    count: number;
+    pairs: Set<string>;
+    sortKey: number;
+  }
+  const groups = new Map<string, Acc>();
+
+  // Bevel (deg from square) to seat a strut end flush on a sphere-tangent face.
+  const endBevelDeg = (from: number[], to: number[]): number => {
+    const dx = to[0] - from[0];
+    const dy = to[1] - from[1];
+    const dz = to[2] - from[2];
+    const dl = Math.hypot(dx, dy, dz) || 1;
+    const rl = Math.hypot(from[0], from[1], from[2]) || 1;
+    const dot = (dx * from[0] + dy * from[1] + dz * from[2]) / (dl * rl);
+    return (Math.asin(Math.min(1, Math.abs(dot))) * 180) / Math.PI;
+  };
 
   for (const [a, b] of d.edges) {
     const va = d.verts[a];
     const vb = d.verts[b];
-    const len =
-      Math.hypot(va[0] - vb[0], va[1] - vb[1], va[2] - vb[2]) *
-      (scaleToMeters / (DOME_RADIUS * 2));
-    const key = len.toFixed(4);
-    if (!lengths.has(key)) lengths.set(key, { length: len, count: 0 });
-    lengths.get(key)!.count++;
+    const length = Math.hypot(va[0] - vb[0], va[1] - vb[1], va[2] - vb[2]) * worldToM;
+
+    const floorA = sockets?.[a]?.floorMm ?? 0;
+    const floorB = sockets?.[b]?.floorMm ?? 0;
+    const cutLength = Math.max(0, length - (floorA + floorB) / 1000);
+    const seatAvg = ((sockets?.[a]?.seatMm ?? 0) + (sockets?.[b]?.seatMm ?? 0)) / 2;
+    const bevelAvg = (endBevelDeg(va, vb) + endBevelDeg(vb, va)) / 2;
+
+    // Group by cut length (what you cut), at a buildable tolerance.
+    const key = tolM > 0 ? String(Math.round(cutLength / tolM)) : cutLength.toFixed(4);
+    let g = groups.get(key);
+    if (!g) {
+      g = { lengthSum: 0, cutSum: 0, seatSum: 0, bevelSum: 0, count: 0, pairs: new Set(), sortKey: cutLength };
+      groups.set(key, g);
+    }
+    g.lengthSum += length;
+    g.cutSum += cutLength;
+    g.seatSum += seatAvg;
+    g.bevelSum += bevelAvg;
+    g.count++;
+    if (hubLabels) {
+      const la = hubLabels[a];
+      const lb = hubLabels[b];
+      if (la && lb) g.pairs.add([la, lb].sort().join('–'));
+    }
   }
 
-  return [...lengths.values()]
-    .sort((a, b) => a.length - b.length)
-    .map((s, i) => ({
-      length: s.length,
-      count: s.count,
+  return [...groups.values()]
+    .sort((x, y) => x.sortKey - y.sortKey)
+    .map((g, i) => ({
+      length: g.lengthSum / g.count,
+      cutLength: g.cutSum / g.count,
+      insertionDepthMm: g.seatSum / g.count,
+      count: g.count,
       label: `S${i + 1}`,
+      hubPairs: g.pairs.size ? [...g.pairs].sort() : undefined,
+      seatBevelDeg: g.bevelSum / g.count,
     }));
 }
 
@@ -308,17 +391,25 @@ export function strutTableCsv(
   dome?: DomeData,
   hubTypes?: HubType[]
 ): string {
-  const header = dome
-    ? 'label,length_m,count,material,cut_priority,hub_a,hub_b'
-    : 'label,length_m,count,material,cut_priority';
+  const withHubs = !!(dome && hubTypes);
+  const header = withHubs
+    ? 'label,length_m,cut_length_m,insertion_depth_mm,seat_bevel_deg,count,material,cut_priority,hub_pairs'
+    : 'label,length_m,cut_length_m,insertion_depth_mm,seat_bevel_deg,count,material,cut_priority';
   const rows = [header];
   struts.forEach((s, i) => {
     const priority = i + 1;
-    if (dome && hubTypes) {
-      rows.push(csvRow([s.label, s.length.toFixed(4), s.count, materialLabel, priority, '', '']));
-    } else {
-      rows.push(csvRow([s.label, s.length.toFixed(4), s.count, materialLabel, priority]));
-    }
+    const cells: (string | number)[] = [
+      s.label,
+      s.length.toFixed(4),
+      s.cutLength.toFixed(4),
+      s.insertionDepthMm.toFixed(1),
+      (s.seatBevelDeg ?? 0).toFixed(1),
+      s.count,
+      materialLabel,
+      priority,
+    ];
+    if (withHubs) cells.push((s.hubPairs ?? []).join('; '));
+    rows.push(csvRow(cells));
   });
   return rows.join('\n');
 }

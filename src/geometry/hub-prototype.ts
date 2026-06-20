@@ -38,7 +38,16 @@ export function getHubPrototype(ht: HubType, p: HubParams): THREE.BufferGeometry
   let proto = protoCache.get(key);
   if (!proto) {
     const dirs = ht.dirs.map((d) => new THREE.Vector3(d[0], d[1], d[2]));
-    const built = createHubFromDirs(dirs, p);
+    // Roll the prototype's sockets relative to its own outward radial; the
+    // instance rotation that maps it onto each symmetry-related vertex carries
+    // that roll with it, so rectangular sockets stay aligned with the struts.
+    const vlen = Math.hypot(ht.vPos[0], ht.vPos[1], ht.vPos[2]) || 1;
+    const rollRefUp: [number, number, number] = [
+      ht.vPos[0] / vlen,
+      ht.vPos[1] / vlen,
+      ht.vPos[2] / vlen,
+    ];
+    const built = createHubFromDirs(dirs, { ...p, rollRefUp });
     if (!built) throw new Error('Failed to build hub prototype');
     proto = built;
     protoCache.set(key, proto);
@@ -156,7 +165,10 @@ export function buildHubInstance(
     const key = `fallback:${vi}:${paramsFingerprint(p)}`;
     let base = instanceCache.get(key);
     if (!base) {
-      const built = createHubFromDirs(actual, p);
+      const v = dome.verts[vi];
+      const vlen = Math.hypot(v[0], v[1], v[2]) || 1;
+      const rollRefUp: [number, number, number] = [v[0] / vlen, v[1] / vlen, v[2] / vlen];
+      const built = createHubFromDirs(actual, { ...p, rollRefUp });
       if (!built) return null;
       instanceCache.set(key, built);
       base = built;

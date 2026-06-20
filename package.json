@@ -1,6 +1,6 @@
 {
   "name": "geodesic",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Generate organic, 3D-printable geodesic dome connector hubs",
   "license": "MIT",
   "type": "module",
@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
     "test": "npm run test:unit && npm run test:e2e && npm run test:visual",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",

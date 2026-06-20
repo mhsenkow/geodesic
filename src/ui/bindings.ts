@@ -577,6 +577,7 @@ export function bindUi(app: GeodesicApp): void {
   );
   document.getElementById('insp-close')?.addEventListener('click', () => app.closeInspector());
   document.getElementById('btn-reset-settings')?.addEventListener('click', () => {
+    if (!confirm('Reset all settings to defaults? This discards your current design and any unsaved changes.')) return;
     clearSettings();
     location.reload();
   });

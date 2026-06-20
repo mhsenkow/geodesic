@@ -47,6 +47,49 @@ export function socketLengthFromSettings(
   return Math.max(stockMm * 2.5 * (depthFrac / defaultDepthFraction), minLen);
 }
 
+export interface RoundSocketGeometry {
+  /** Total bored socket length, mm (historically reported as "socket depth"). */
+  socketLenMm: number;
+  /** Distance from hub center to the socket floor where the strut bottoms out, mm. */
+  floorFromCenterMm: number;
+  /** How far the strut actually engages before bottoming out, mm. */
+  seatDepthMm: number;
+  openingXMm: number;
+  openingYMm: number;
+  openingLabel: string;
+}
+
+/** Distance from hub center to the round socket floor (deepest seat). 0 when bored through. */
+export function roundVoidInset(p: HubParams, strutLen: number): number {
+  const boreDep = p.rodD * 1.3;
+  return p.boreThrough ? 0 : Math.max(strutLen - boreDep, strutLen * 0.32);
+}
+
+/**
+ * Single source of truth for round-socket dimensions. The mesh builder, the
+ * inspector fit checks, and the strut cut-length math all consume this so they
+ * can never drift apart.
+ */
+export function roundSocketGeometry(p: HubParams): RoundSocketGeometry {
+  const strutLen = socketLengthFromSettings(p.rodD, p, p.rodD * 1.2);
+  const floor = roundVoidInset(p, strutLen);
+  const tol = socketTolerances(p);
+  const openingXMm = p.rodD + tol.x * 2;
+  const openingYMm = p.rodD + tol.y * 2;
+  const openingLabel =
+    Math.abs(tol.x - tol.y) < 0.001
+      ? `Ø ${(p.rodD + tol.max * 2).toFixed(2)} mm`
+      : `${openingXMm.toFixed(2)} × ${openingYMm.toFixed(2)} mm oval`;
+  return {
+    socketLenMm: strutLen,
+    floorFromCenterMm: floor,
+    seatDepthMm: Math.max(0, strutLen - floor),
+    openingXMm,
+    openingYMm,
+    openingLabel,
+  };
+}
+
 export function ellipticCylinderAlongZ(
   h: number,
   rx: number,
@@ -59,12 +102,12 @@ export function ellipticCylinderAlongZ(
   return transformManifold(cyl, new THREE.Matrix4().makeScale(Math.max(rx, EPS), Math.max(ry, EPS), 1));
 }
 
-function alignZ(mfd: Manifold, dir: THREE.Vector3): Manifold {
-  return transformManifold(mfd, frameForStrutAxisZ(dir, WORLD_UP));
+function alignZ(mfd: Manifold, dir: THREE.Vector3, up: THREE.Vector3 = WORLD_UP): Manifold {
+  return transformManifold(mfd, frameForStrutAxisZ(dir, up));
 }
 
-function axisXTransform(dir: THREE.Vector3, origin: THREE.Vector3): THREE.Matrix4 {
-  const frame = frameForStrutAxisZ(dir, WORLD_UP);
+function axisXTransform(dir: THREE.Vector3, origin: THREE.Vector3, up: THREE.Vector3 = WORLD_UP): THREE.Matrix4 {
+  const frame = frameForStrutAxisZ(dir, up);
   const lx = new THREE.Vector3();
   const ly = new THREE.Vector3();
   const lz = new THREE.Vector3();
@@ -137,7 +180,8 @@ export function addTimberFrictionRibs(
   dirs: THREE.Vector3[],
   d: TimberFitDims,
   p: HubParams,
-  voidInset: number
+  voidInset: number,
+  up: THREE.Vector3 = WORLD_UP
 ): Manifold {
   if (!p.frictionRibs || !dirs.length) return hub;
   const Manifold = getManifold();
@@ -157,7 +201,7 @@ export function addTimberFrictionRibs(
   const zAt = ribPositions(count, voidInset, d.socketLen - width * 0.5);
   const ribs: Manifold[] = [];
   for (const dir of dirs) {
-    for (const z of zAt) ribs.push(alignZ(rib.translate(0, 0, z), dir));
+    for (const z of zAt) ribs.push(alignZ(rib.translate(0, 0, z), dir, up));
   }
   return ribs.length ? Manifold.union([hub, Manifold.union(ribs)]) : hub;
 }
@@ -197,7 +241,8 @@ export function addTimberScrewBosses(
   hub: Manifold,
   dirs: THREE.Vector3[],
   d: TimberFitDims,
-  p: HubParams
+  p: HubParams,
+  up: THREE.Vector3 = WORLD_UP
 ): Manifold {
   if (!p.screwHoles || !p.screwBosses || !dirs.length) return hub;
   const Manifold = getManifold();
@@ -208,7 +253,7 @@ export function addTimberScrewBosses(
   const bosses: Manifold[] = [];
 
   for (const dir of dirs) {
-    const frame = frameForStrutAxisZ(dir, WORLD_UP);
+    const frame = frameForStrutAxisZ(dir, up);
     const lx = new THREE.Vector3();
     frame.extractBasis(lx, new THREE.Vector3(), new THREE.Vector3());
     for (const zDist of along) {
@@ -219,7 +264,7 @@ export function addTimberScrewBosses(
           .multiplyScalar(zDist)
           .add(lx.clone().multiplyScalar(side * (d.innerW / 2 + d.wall * 0.55)));
         const boss = Manifold.cylinder(bossLen, bossR, bossR, 20, true);
-        bosses.push(transformManifold(boss, axisXTransform(dir, origin)));
+        bosses.push(transformManifold(boss, axisXTransform(dir, origin, up)));
       }
     }
   }

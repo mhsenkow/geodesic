@@ -7,6 +7,8 @@ import { validateStlGeometry } from './stl-validation';
 import { isManifoldReady } from './manifold-init';
 import { designJsonMeta } from '../storage/settings-schema';
 import { strutTableCsv } from '../geodesic/math';
+import { planCuts } from '../guides/material';
+import { getMaterialProfile } from '../materials/catalog';
 import { csvRow } from '../utils/csv';
 import { zipStore } from './zip';
 
@@ -77,10 +79,19 @@ function stripExt(filename: string): string {
 function batchReadme(
   settings: AppSettings,
   hubTypes: HubType[],
+  struts: StrutType[],
   mode: BatchExportMode,
-  warnings: string[]
+  warnings: string[],
+  sticksNeeded?: number
 ): string {
   const hubCount = hubTypes.reduce((sum, ht) => sum + ht.verts.length, 0);
+  const strutCount = struts.reduce((s, t) => s + t.count, 0);
+  const profile = getMaterialProfile(settings.materialStockId);
+  const matName = profile?.nominal ?? (settings.matType === 'round' ? `${settings.rodD} mm tube` : `${settings.lumW}×${settings.lumH} mm timber`);
+  const stickLen = profile?.stockLengthM ?? settings.stockLength;
+  const socketCount = hubTypes.reduce((n, h) => n + h.verts.length * h.val, 0);
+  const screwsPerSocket = settings.matType === 'rect' ? 2 : 1;
+  const screwCount = settings.screwHoles ? socketCount * screwsPerSocket : 0;
   const lines = [
     'Geodesic Hub Generator export bundle',
     '',
@@ -89,10 +100,19 @@ function batchReadme(
     `Hub types: ${hubTypes.length}`,
     `Physical hubs: ${hubCount}`,
     '',
+    'SHOPPING LIST',
+    `- ${hubCount} printed hubs (${hubTypes.length} unique designs — see STL files)`,
+    `- ${strutCount} struts of ${matName}` +
+      (sticksNeeded ? ` → ~${sticksNeeded} × ${stickLen} m sticks (see tables/cut_sheet.csv)` : ' (see tables/cut_sheet.csv for the cutting plan)'),
+    screwCount ? `- ${screwCount} × ${settings.screwDia} mm screws / set-screws` : '- No fasteners (friction-fit sockets)',
+    '',
+    'Lengths in tables/strut_lengths.csv are CUT lengths (already account for socket seating).',
+    'cut_length_m = what you saw to · length_m = hub center-to-center.',
+    '',
     'Recommended workflow:',
     '1. Print one unique hub type first and confirm socket fit.',
-    '2. Use tables/strut_lengths.csv and metadata/export-manifest.json for counts.',
-    '3. Review warnings before batch printing.',
+    '2. Cut all struts from tables/cut_sheet.csv, then label per tables/vertices.csv.',
+    '3. Review warnings before batch printing, then assemble ring by ring.',
     '',
     warnings.length ? `Warnings: ${warnings.length}` : 'Warnings: none',
     ...warnings.map((w) => `- ${w}`),
@@ -289,11 +309,16 @@ export async function exportAllHubsZip(
       path: 'tables/strut_lengths.csv',
       data: strutTableCsv(struts, options.materialLabel ?? 'stock', dome, hubTypes),
     });
+    files.push({ path: 'tables/cut_sheet.csv', data: cutSheetCsv(struts, settings) });
   }
+  files.push({ path: 'tables/vertices.csv', data: vertexCoordsCsv(dome, hubTypes) });
   if (options.bomEstimate) {
     files.push({ path: 'tables/bom.csv', data: bomCsv(settings, hubTypes, struts, options.bomEstimate) });
   }
-  files.push({ path: 'README.txt', data: batchReadme(settings, hubTypes, mode, exportWarnings) });
+  files.push({
+    path: 'README.txt',
+    data: batchReadme(settings, hubTypes, struts, mode, exportWarnings, options.bomEstimate?.sticksNeeded),
+  });
   const blob = zipStore(files);
   return {
     blob,
@@ -517,16 +542,51 @@ export function bomCsv(
     printCost: number;
   }
 ): string {
+  const socketCount = hubTypes.reduce((n, h) => n + h.verts.length * h.val, 0);
+  const screwsPerSocket = settings.matType === 'rect' ? 2 : 1;
+  const screwCount = settings.screwHoles ? socketCount * screwsPerSocket : 0;
   const rows = [
     'category,label,quantity,unit,notes',
     ...hubTypes.map(
       (h) => csvRow(['hub', h.label, h.verts.length, 'each', `${h.val}-way${h.isBase ? ' base' : ''}`])
     ),
-    ...strutTypes.map((s) => csvRow(['strut', s.label, s.count, 'each', `${s.length.toFixed(4)} m`])),
+    ...strutTypes.map((s) =>
+      csvRow(['strut', s.label, s.count, 'each', `cut ${s.cutLength.toFixed(4)} m (center-to-center ${s.length.toFixed(4)} m)`])
+    ),
     csvRow(['stock', 'linear sticks', estimate.sticksNeeded, 'sticks', `${settings.stockLength} m each`]),
+    ...(screwCount > 0
+      ? [csvRow(['fastener', `${settings.screwDia} mm screw/set-screw`, screwCount, 'each', `${screwsPerSocket} per socket × ${socketCount} sockets`])]
+      : []),
     csvRow(['filament', 'PLA/PETG', estimate.printMassG.toFixed(0), 'g', `~${estimate.filamentLengthM.toFixed(1)} m`]),
     csvRow(['cost', 'total', estimate.totalCost.toFixed(2), settings.currencySymbol, `stock ${estimate.stockCost.toFixed(2)} + print ${estimate.printCost.toFixed(2)}`]),
   ];
+  return rows.join('\n');
+}
+
+/** Per-stick cutting plan: which strut pieces come off each stock stick, with offcut. */
+export function cutSheetCsv(strutTypes: StrutType[], settings: AppSettings): string {
+  const labelFor = new Map<string, string>();
+  const expanded: number[] = [];
+  for (const t of strutTypes) {
+    labelFor.set(t.cutLength.toFixed(4), t.label);
+    for (let i = 0; i < t.count; i++) expanded.push(t.cutLength);
+  }
+  const plan = planCuts(
+    expanded,
+    Math.max(0.1, settings.stockLength),
+    Math.max(0, settings.stockWastePct),
+    0.003
+  );
+  const rows = ['stick,pieces,cuts,offcut_m'];
+  plan.layout.forEach((pieces, i) => {
+    const cuts = pieces.map((L) => `${labelFor.get(L.toFixed(4)) ?? '?'}@${L.toFixed(3)}`).join(' + ');
+    rows.push(csvRow([i + 1, pieces.length, cuts, plan.offcuts[i].toFixed(3)]));
+  });
+  if (plan.oversize.length) {
+    rows.push(
+      csvRow(['oversize', plan.oversize.length, plan.oversize.map((L) => L.toFixed(3)).join(' '), 'splice/longer stock'])
+    );
+  }
   return rows.join('\n');
 }
 

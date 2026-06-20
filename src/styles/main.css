@@ -608,3 +608,30 @@ input[type="number"]:focus, select:focus {
 }
 
 .section-header { cursor: pointer; min-height: 44px; }
+
+/* Strut-length color legend (shown when struts are colored by length) */
+.strut-legend {
+  position: fixed;
+  right: 18px;
+  bottom: 64px;
+  z-index: 40;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-secondary);
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.strut-legend[hidden] { display: none; }
+.strut-legend-title { color: var(--text-primary); font-weight: 600; }
+.strut-legend-bar {
+  height: 8px;
+  width: 150px;
+  margin: 5px 0 3px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, hsl(202, 82%, 56%), hsl(50, 82%, 56%));
+}
+.strut-legend-scale { display: flex; justify-content: space-between; }
+@media (max-width: 768px) { .strut-legend { bottom: 56px; right: 10px; } }

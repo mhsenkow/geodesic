@@ -1,12 +1,16 @@
 import * as THREE from 'three';
 import type { HubParams } from '../types';
-import { socketTolerances, socketLengthFromSettings } from './socket-fit';
+import { socketTolerances } from './socket-fit';
+import { hubSocketInfo } from './socket-geometry';
 
 export interface FitCheckReport {
   minMeetAngleDeg: number;
   meetAngleWarning: string | null;
   socketOpeningMm: { x: number; y: number; label: string };
+  /** Total bored socket length, mm. */
   socketDepthMm: number;
+  /** How far the strut actually engages before bottoming out, mm (the real grip). */
+  socketSeatDepthMm: number;
   socketDepthWarning: string | null;
   sampledMinWallMm: number;
   strutFitOk: boolean;
@@ -48,10 +52,8 @@ export function analyzeFitChecks(
 
   const tol = socketTolerances(p);
   const innerR = p.matType === 'round' ? p.rodD / 2 + tol.max : Math.hypot(p.lumW, p.lumH) / 2;
-  const socketLen =
-    p.matType === 'round'
-      ? socketLengthFromSettings(p.rodD, p, p.rodD * 1.2)
-      : socketLengthFromSettings(Math.max(p.lumW, p.lumH), p, p.lumH * 1.2);
+  const sock = hubSocketInfo(p, dirs);
+  const socketLen = sock.socketLenMm;
   const socketOpeningMm =
     p.matType === 'round'
       ? {
@@ -102,6 +104,7 @@ export function analyzeFitChecks(
     meetAngleWarning,
     socketOpeningMm,
     socketDepthMm: socketLen,
+    socketSeatDepthMm: sock.seatDepthMm,
     socketDepthWarning,
     sampledMinWallMm: sampleMinWallMm(p, minMeet),
     strutFitOk,

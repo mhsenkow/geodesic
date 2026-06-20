@@ -81,7 +81,7 @@
         <div class="cg"><label id="label-nozzle-dia">Nozzle (mm)</label><input type="number" id="nozzle-dia" value="0.4" step="0.05" min="0.1" max="1.2"></div>
         <div class="cg"><label>Nozzle Preset</label><select id="nozzle-preset"><option value="0.2">0.2 mm fine</option><option value="0.4" selected>0.4 mm standard</option><option value="0.6">0.6 mm fast</option><option value="0.8">0.8 mm coarse</option></select></div>
       </div>
-      <p class="hint-text">Tolerance tuning: see <a href="docs/PRINT-GUIDE.md" target="_blank" rel="noopener">Print Guide</a>.</p>
+      <p class="hint-text">Tolerance tuning: see <a href="https://github.com/mhsenkow/geodesic/blob/main/docs/PRINT-GUIDE.md" target="_blank" rel="noopener">Print Guide</a>.</p>
       <div class="input-pair">
         <div class="cg"><label>Plate Width (mm)</label><input type="number" id="build-plate-w" value="220" step="5" min="60" max="500"></div>
         <div class="cg"><label>Plate Depth (mm)</label><input type="number" id="build-plate-d" value="220" step="5" min="60" max="500"></div>
@@ -103,6 +103,7 @@
       <div class="cg"><label>Strut Color</label><select id="strut-color-mode"><option value="length" selected>Color by Length</option><option value="material">Material Color</option></select></div>
       <div class="toggle-row"><span>Show Hubs on Dome</span><input type="checkbox" class="toggle" id="showHubs" checked></div>
       <div class="toggle-row"><span>Vertex Markers</span><input type="checkbox" class="toggle" id="showMarkers" checked></div>
+      <div class="toggle-row"><span>Auto-open Inspector</span><input type="checkbox" class="toggle" id="auto-open-inspector"></div>
       <div class="cg"><label>Dome Preview Quality</label><select id="preview-quality"><option value="fast">Fast (markers + LOD)</option><option value="balanced" selected>Balanced</option><option value="full">Full (slow)</option></select><p class="hint-text">Preview caps detail at 24–36; export always uses ≥64 segments.</p></div>
     </div>
   </div>
@@ -166,6 +167,12 @@
       <div class="stat-item"><span class="stat-label">Faces</span><span class="stat-value" id="stat-faces">—</span></div>
     </div>
   </div>
+
+  <div id="strut-legend" class="strut-legend" hidden aria-hidden="true">
+    <span class="strut-legend-title">Strut length</span>
+    <div class="strut-legend-bar"></div>
+    <div class="strut-legend-scale"><span id="strut-legend-min">—</span><span id="strut-legend-max">—</span></div>
+  </div>
 </div>
 
 <div id="hub-inspector" role="dialog" aria-modal="true" aria-labelledby="insp-title">
@@ -183,7 +190,7 @@
     <div class="validation-badges" id="insp-validation-badges"></div>
 
     <div class="insp-section-title">Hub Style &amp; Refinement</div>
-      <div class="cg" id="hub-style-group"><label>Hub Style</label><div class="radio-group radio-group-3"><input type="radio" name="hubStyle" id="style-sharp" value="sharp"><label for="style-sharp">Sharp</label><input type="radio" name="hubStyle" id="style-organic" value="organic" checked><label for="style-organic">Organic</label><input type="radio" name="hubStyle" id="style-metaball" value="metaball"><label for="style-metaball">Metaball</label></div><p class="hint-text">Sharp = crisp CSG · Organic = smooth-blended · Metaball = amorphous SDF blob.</p></div>
+      <div class="cg" id="hub-style-group"><label>Hub Style</label><div class="radio-group radio-group-3"><input type="radio" name="hubStyle" id="style-sharp" value="sharp"><label for="style-sharp">Sharp</label><input type="radio" name="hubStyle" id="style-organic" value="organic" checked><label for="style-organic">Organic</label><input type="radio" name="hubStyle" id="style-metaball" value="metaball"><label for="style-metaball">Metaball</label></div><p class="hint-text">Sharp = crisp CSG · Organic = smooth-blended · Metaball = amorphous SDF blob (round tube only — timber keeps crisp socket faces via Organic).</p></div>
     <div class="cg" id="flare-group"><label id="flare-label">Blend Radius (Node Size)</label><div class="cr"><input type="range" id="hub-body" min="1" max="2.5" value="1.6" step="0.1"><span class="rv" id="hub-body-val">1.6x</span></div><p class="hint-text" id="flare-hint">Size of the central blob the struts merge into. Pair with Mesh Smooth for organic joins.</p><div class="chip-row" data-target="hub-body"><button type="button" class="chip" data-value="1.2">Slim</button><button type="button" class="chip" data-value="1.6">Standard</button><button type="button" class="chip" data-value="2.1">Chunky</button></div></div>
     <div class="cg" id="junction-meet-group"><label id="label-junction-meet">Junction Meet Blend</label><div class="cr"><input type="range" id="junction-meet" min="0.6" max="1.5" value="1" step="0.05"><span class="rv" id="junction-meet-val">1.00×</span></div><p class="hint-text">Solid core where struts meet — raise for tighter insertion angles below.</p></div>
     <div class="cg"><label id="label-hub-chamfer">Entry Bevel (mm)</label><div class="cr"><input type="range" id="hub-chamfer" min="0" max="6" value="2" step="0.5"><span class="rv" id="hub-chamfer-val">2.0</span></div><p class="hint-text">Conical lead-in at each socket mouth so struts slide in easily.</p></div>

@@ -63,8 +63,10 @@ export function timberOuterDimsAtZ(
   };
 }
 
-/** Round-style junction sphere radius for timber hubs. */
+/** Round-style junction sphere radius for timber hubs. A generous floor keeps
+ *  the node a solid blended mass even at wide strut angles / high valence,
+ *  instead of a spiky star of barely-overlapping prisms. */
 export function timberCoreRadius(d: TimberDims, p: HubParams): number {
   const outer = Math.max(d.outerW, d.outerH) * 0.5;
-  return outer * Math.max(0.85, p.bodyScale * 0.62);
+  return outer * Math.max(1.05, p.bodyScale * 0.7);
 }

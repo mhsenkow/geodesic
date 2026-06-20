@@ -74,7 +74,23 @@ describe('computeStrutTypes', () => {
     for (let i = 1; i < struts.length; i++) {
       expect(struts[i].length).toBeGreaterThanOrEqual(struts[i - 1].length);
     }
+    // Each strut type carries center-to-center length, a cut length, and depth.
+    for (const s of struts) {
+      expect(s.cutLength).toBeGreaterThan(0);
+      expect(typeof s.insertionDepthMm).toBe('number');
+    }
     const csv = strutTableCsv(struts, 'test');
-    expect(csv).toContain('label,length_m,count,material');
+    expect(csv).toContain('label,length_m,cut_length_m,insertion_depth_mm,seat_bevel_deg');
+  });
+
+  it('subtracts socket seating to produce a shorter cut length', () => {
+    const sp = genSphere(2, DOME_RADIUS);
+    const dome = truncDome(sp, 0.625, DOME_RADIUS, true, false, 2, 4);
+    // 36 mm floor inset at each end → cut length 72 mm shorter than center-to-center.
+    const vertexSocket = dome.verts.map(() => ({ floorMm: 36, seatMm: 35 }));
+    const struts = computeStrutTypes(dome, 4, { vertexSocket });
+    for (const s of struts) {
+      expect(s.cutLength).toBeCloseTo(s.length - 0.072, 4);
+    }
   });
 });

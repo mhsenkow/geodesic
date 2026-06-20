@@ -41,8 +41,14 @@ function permuteArr(arr: number[]): number[][] {
   return result;
 }
 
+const permCache = new Map<number, number[][]>();
 function permutations(n: number): number[][] {
-  return permuteArr(Array.from({ length: n }, (_, i) => i));
+  let p = permCache.get(n);
+  if (!p) {
+    p = permuteArr(Array.from({ length: n }, (_, i) => i));
+    permCache.set(n, p);
+  }
+  return p;
 }
 
 /** Best one-to-one pairing of strut directions (adj order differs per vertex). */
@@ -88,47 +94,107 @@ function pickIndependentTriple(dirs: THREE.Vector3[]): [THREE.Vector3, THREE.Vec
   return [a, b, c];
 }
 
-/** Horn / Kabsch rotation mapping canonical strut dirs → actual dirs. */
+/** Sum of (1 − cos θ) alignment error of rotation q over matched pairs. */
+function rotationError(src: THREE.Vector3[], dst: THREE.Vector3[], q: THREE.Quaternion): number {
+  const a = new THREE.Vector3();
+  let err = 0;
+  for (let i = 0; i < src.length; i++) {
+    a.copy(src[i]).applyQuaternion(q);
+    err += 1 - a.dot(dst[i]);
+  }
+  return err;
+}
+
+/**
+ * Iteratively refine a rotation to the least-squares optimum over ALL matched
+ * pairs (Horn-style fixed point: rotate by the residual torque axis Σ aᵢ×bᵢ
+ * through atan2(|Σ aᵢ×bᵢ|, Σ aᵢ·bᵢ) until it stops moving). Unlike a 2-vector
+ * frame fit, this makes every socket — not just two — land on its strut.
+ */
+function refineRotation(
+  src: THREE.Vector3[],
+  dst: THREE.Vector3[],
+  seed: THREE.Quaternion
+): THREE.Quaternion {
+  const q = seed.clone().normalize();
+  const a = new THREE.Vector3();
+  const axis = new THREE.Vector3();
+  const dq = new THREE.Quaternion();
+  for (let iter = 0; iter < 60; iter++) {
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    let d = 0;
+    for (let i = 0; i < src.length; i++) {
+      a.copy(src[i]).applyQuaternion(q);
+      const b = dst[i];
+      cx += a.y * b.z - a.z * b.y;
+      cy += a.z * b.x - a.x * b.z;
+      cz += a.x * b.y - a.y * b.x;
+      d += a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+    const clen = Math.hypot(cx, cy, cz);
+    if (clen < 1e-9) break;
+    const angle = Math.atan2(clen, d);
+    if (angle < 1e-7) break;
+    axis.set(cx / clen, cy / clen, cz / clen);
+    dq.setFromAxisAngle(axis, angle);
+    q.premultiply(dq).normalize();
+  }
+  return q;
+}
+
+/** Cheap 2-vector frame rotation mapping src → dst for a *fixed* pairing. */
+function frameFitQuat(src: THREE.Vector3[], dst: THREE.Vector3[]): THREE.Quaternion {
+  const [sa, sb, sc] = pickIndependentTriple(src);
+  const [ta, tb, tc] = pickIndependentTriple(dst);
+  return new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4()
+      .makeBasis(ta, tb, tc)
+      .multiply(new THREE.Matrix4().makeBasis(sa, sb, sc).invert())
+  );
+}
+
+/** Cap on exhaustive permutation search; above this we trust the no-rotation
+ *  greedy pairing (those rare high-valence hubs rebuild from their own struts). */
+const MAX_EXHAUSTIVE_VALENCE = 6;
+
+/**
+ * Horn / Kabsch rotation mapping canonical strut dirs → actual dirs.
+ *
+ * The correct strut-to-strut correspondence depends on the (unknown) rotation,
+ * so a no-rotation pairing fails for symmetry-rotated hubs (a 60°-rotated
+ * 6-way hub pairs to the wrong neighbours). We instead score *every* pairing
+ * by a cheap frame fit, keep the best, then polish it to the least-squares
+ * optimum — so a symmetric hub aligns to ~0° instead of landing 30°+ off.
+ */
 export function alignmentQuat(
   canonical: THREE.Vector3[],
   actual: THREE.Vector3[]
 ): THREE.Quaternion {
-  if (canonical.length === 0) return new THREE.Quaternion();
-  if (canonical.length === 1) {
-    return new THREE.Quaternion().setFromUnitVectors(
-      canonical[0].clone().normalize(),
-      actual[0].clone().normalize()
-    );
-  }
-
-  const perm = matchDirPermutation(canonical, actual);
+  const n = canonical.length;
+  if (n === 0) return new THREE.Quaternion();
   const src = canonical.map((v) => v.clone().normalize());
-  const dst = perm.map((i) => actual[i].clone().normalize());
+  const act = actual.map((v) => v.clone().normalize());
+  if (n === 1) return new THREE.Quaternion().setFromUnitVectors(src[0], act[0]);
 
-  const [sa, sb, sc] = pickIndependentTriple(src);
-  const [ta, tb, tc] = pickIndependentTriple(dst);
+  const perms =
+    n <= MAX_EXHAUSTIVE_VALENCE ? permutations(n) : [matchDirPermutation(canonical, actual)];
 
-  const srcMat = new THREE.Matrix4().makeBasis(sa, sb, sc);
-  const dstMat = new THREE.Matrix4().makeBasis(ta, tb, tc);
-  const rotMat = dstMat.multiply(srcMat.clone().invert());
-
-  const q = new THREE.Quaternion().setFromRotationMatrix(rotMat);
-
-  let err = 0;
-  for (let i = 0; i < src.length; i++) {
-    err += 1 - src[i].clone().applyQuaternion(q).dot(dst[i]);
-  }
-
-  if (err > 0.02) {
-    const q0 = new THREE.Quaternion().setFromUnitVectors(src[0], dst[0]);
-    let err0 = 0;
-    for (let i = 0; i < src.length; i++) {
-      err0 += 1 - src[i].clone().applyQuaternion(q0).dot(dst[i]);
+  let bestQ = new THREE.Quaternion();
+  let bestErr = Infinity;
+  let bestDst = act;
+  for (const perm of perms) {
+    const dst = perm.map((i) => act[i]);
+    const q = frameFitQuat(src, dst);
+    const e = rotationError(src, dst, q);
+    if (e < bestErr) {
+      bestErr = e;
+      bestQ = q;
+      bestDst = dst;
     }
-    if (err0 < err) return q0;
   }
-
-  return q;
+  return refineRotation(src, bestDst, bestQ);
 }
 
 export function sortDirsCanonical(dirs: THREE.Vector3[]): THREE.Vector3[] {

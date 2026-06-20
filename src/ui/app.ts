@@ -8,7 +8,9 @@ import {
   classHubs,
   computeStrutTypes,
   strutTableCsv,
+  type VertexSocket,
 } from '../geodesic/math';
+import { hubSocketInfo } from '../geometry/socket-geometry';
 import {
   designJson,
   exportHubStl,
@@ -149,7 +151,7 @@ export class GeodesicApp {
         this.settings.diam
       );
       this.hubTypes = classHubs(this.dome);
-      this.strutTypes = computeStrutTypes(this.dome, this.settings.diam);
+      this.strutTypes = computeStrutTypes(this.dome, this.settings.diam, this.strutComputeOptions());
 
       if (this.settings.selHub != null && this.settings.selHub >= this.hubTypes.length) {
         this.settings.selHub = this.hubTypes.length ? 0 : null;
@@ -170,10 +172,34 @@ export class GeodesicApp {
     });
   }
 
+  /** Per-vertex socket geometry + hub labels so reported strut lengths become
+   *  real cut lengths (chord − how far the strut seats into a hub at each end). */
+  private strutComputeOptions() {
+    if (!this.dome) return {};
+    const hp = this.hubParams();
+    const vertexSocket: VertexSocket[] = new Array(this.dome.verts.length);
+    const vertexHubLabel: string[] = new Array(this.dome.verts.length);
+    for (const ht of this.hubTypes) {
+      const dirs = ht.dirs.map((d) => new THREE.Vector3(d[0], d[1], d[2]));
+      const info = hubSocketInfo(hp, dirs);
+      for (const vi of ht.verts) {
+        vertexSocket[vi] = { floorMm: info.floorFromCenterMm, seatMm: info.seatDepthMm };
+        vertexHubLabel[vi] = ht.label;
+      }
+    }
+    // PVC/EMT can be cut to ~0.5 mm; timber realistically ~1 mm.
+    const clusterToleranceM = (this.settings.matType === 'rect' ? 1 : 0.5) / 1000;
+    return { vertexSocket, vertexHubLabel, clusterToleranceM };
+  }
+
   /** Refresh the cut-list and material/cost panels (volumes are cached per param set). */
   updateMaterialPanels(): void {
     if (!this.dome) return;
-    renderCutList(this.strutTypes, this.settings.unitSystem);
+    renderCutList(
+      this.strutTypes,
+      this.settings.unitSystem,
+      this.settings.strutColorMode === 'length' && this.settings.showStrutBodies
+    );
     const est = estimateMaterial(
       this.dome,
       this.hubTypes,
@@ -295,8 +321,8 @@ export class GeodesicApp {
       );
       addBadge(
         fit.socketDepthWarning || !fit.strutFitOk ? 'warn' : 'ok',
-        `Socket ${fit.socketDepthMm.toFixed(0)}mm`,
-        `${fit.socketOpeningMm.label} opening. ${fit.socketDepthWarning ?? fit.strutFitWarning ?? 'Socket depth and clearance are in the expected range.'}`
+        `Socket ${fit.socketDepthMm.toFixed(0)}mm · seats ${fit.socketSeatDepthMm.toFixed(0)}mm`,
+        `${fit.socketOpeningMm.label} opening; strut engages ~${fit.socketSeatDepthMm.toFixed(0)} mm per end. ${fit.socketDepthWarning ?? fit.strutFitWarning ?? 'Socket depth and clearance are in the expected range.'}`
       );
       addBadge(
         report.maxEdgeMm > report.targetEdgeMm * 1.45 ? 'warn' : 'ok',

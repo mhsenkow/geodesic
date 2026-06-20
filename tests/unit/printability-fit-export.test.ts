@@ -4,7 +4,7 @@ import { DOME_RADIUS, DEFAULT_SETTINGS, type HubParams } from '../../src/types';
 import { genSphere, truncDome, classHubs, computeStrutTypes } from '../../src/geodesic/math';
 import { buildRoundNodeHubSolid } from '../../src/geometry/node-hub-manifold';
 import { analyzePrintability } from '../../src/geometry/printability';
-import { exportAllHubsZip, exportPackedBuildPlate3mf } from '../../src/geometry/export';
+import { exportAllHubsZip, exportPackedBuildPlate3mf, exportHubStl } from '../../src/geometry/export';
 
 const dirs = [
   new THREE.Vector3(1, 0, 0),
@@ -107,6 +107,22 @@ describe('printability and fit features', () => {
     expect(manifest.buildPlate.packedDepthMm).toBeGreaterThan(0);
   });
 
+  it('writes a binary STL whose header triangle count matches the mesh', async () => {
+    const settings = { ...DEFAULT_SETTINGS, freq: 1, detail: 16, embossLabels: false, alignmentNotches: false, frictionRibs: false };
+    const sphere = genSphere(settings.freq, DOME_RADIUS, settings.baseSolid);
+    const dome = truncDome(sphere, settings.trunc, DOME_RADIUS, settings.flatBot, settings.door, settings.doorW, settings.diam);
+    const hubs = classHubs(dome);
+    const params = { ...hubParams, detail: 16, embossLabels: false, alignmentNotches: false, frictionRibs: false };
+    const result = await exportHubStl(0, hubs, dome, settings, params, { force: true });
+    expect(result).not.toBeNull();
+    expect(result!.blocked).not.toBe(true);
+    const buf = await result!.blob.arrayBuffer();
+    // Binary STL: 80-byte header + uint32 triangle count + 50 bytes/triangle.
+    const headerCount = new DataView(buf).getUint32(80, true);
+    expect(headerCount).toBe(result!.validation.triangleCount);
+    expect(buf.byteLength).toBe(84 + headerCount * 50);
+  });
+
   it('exports test and production ZIP bundles with metadata', async () => {
     const settings = {
       ...DEFAULT_SETTINGS,
@@ -154,6 +170,8 @@ describe('printability and fit features', () => {
     expect(uniqueText).toContain('metadata/export-manifest.json');
     expect(uniqueText).toContain('metadata/design.json');
     expect(uniqueText).toContain('tables/strut_lengths.csv');
+    expect(uniqueText).toContain('tables/cut_sheet.csv');
+    expect(uniqueText).toContain('tables/vertices.csv');
     expect(uniqueText).toContain('README.txt');
   });
 });
