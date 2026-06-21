@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { AppSettings, DomeData, HubParams, HubType } from '../types';
 import { DOME_RADIUS, HUB_COLORS } from '../types';
-import { disposeObject, previewHubScale } from '../geometry/hub-geometry';
+import { disposeObject, previewHubScale, edgeRollUp } from '../geometry/hub-geometry';
 import { buildHubInstance, noteHubParamsFingerprint } from '../geometry/hub-prototype';
 import { frameForStrutAxisZ } from '../geometry/hub-orient';
 
@@ -127,11 +127,15 @@ export class MainScene {
       if (len <= 1e-6) return;
       dir.normalize();
       if (stock.kind === 'rect') {
-        // Roll the bar against the dome radial at its midpoint — the same
-        // reference the hub sockets use — so the rectangular cross-section
-        // registers square into the socket instead of twisting.
-        const rollUp = mid.lengthSq() > 1e-6 ? mid.clone().normalize() : undefined;
-        basis.copy(frameForStrutAxisZ(dir, rollUp));
+        // Roll the bar against the same per-edge reference the hub sockets use
+        // (midpoint radial, twisted by the lumber-face angle) so the
+        // rectangular cross-section registers square into the socket at both ends.
+        const ru = edgeRollUp(
+          dome.verts[ia],
+          dome.verts[ib],
+          hubParams.socketRollDeg ?? 0
+        );
+        basis.copy(frameForStrutAxisZ(dir, new THREE.Vector3(ru[0], ru[1], ru[2])));
         basis.scale(rectScale.set(stock.width, stock.depth, len));
         mat4.copy(basis);
         mat4.setPosition(mid);

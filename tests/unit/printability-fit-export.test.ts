@@ -172,6 +172,9 @@ describe('printability and fit features', () => {
     expect(uniqueText).toContain('tables/strut_lengths.csv');
     expect(uniqueText).toContain('tables/cut_sheet.csv');
     expect(uniqueText).toContain('tables/vertices.csv');
+    expect(uniqueText).toContain('tables/cover_panels.csv');
+    expect(uniqueText).toContain('ASSEMBLY.md');
+    expect(uniqueText).toContain('Assemble ring by ring');
     expect(uniqueText).toContain('README.txt');
   });
 });

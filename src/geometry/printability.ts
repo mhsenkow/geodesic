@@ -51,10 +51,61 @@ function triangleIndices(geo: THREE.BufferGeometry): number[] {
   return Array.from(geo.index.array);
 }
 
+/**
+ * Measure actual wall thickness by casting a ray inward from each sampled face
+ * to the opposite surface (local shape thickness). Returns a low percentile so
+ * a few chamfer-edge / sliver outliers don't masquerade as a thin wall. This is
+ * the real mesh measurement — it catches walls thinned by smoothing or tight
+ * strut meets that the parameter estimate can't see. Returns Infinity if it
+ * can't measure (too few triangles / inward-wound mesh).
+ */
+function measureMinWallMm(geo: THREE.BufferGeometry, maxSamples = 90): number {
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+  const idx = triangleIndices(geo);
+  const triCount = idx.length / 3;
+  if (triCount < 12) return Infinity;
+  // DoubleSide so the ray registers the bore/back wall it crosses — a
+  // front-side mesh would skip it and measure the chord across the whole hub.
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  const ray = new THREE.Raycaster();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const nrm = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const origin = new THREE.Vector3();
+  const step = Math.max(1, Math.floor(triCount / maxSamples));
+  const thicknesses: number[] = [];
+  for (let t = 0; t < triCount; t += step) {
+    const i = t * 3;
+    a.fromBufferAttribute(pos, idx[i]);
+    b.fromBufferAttribute(pos, idx[i + 1]);
+    c.fromBufferAttribute(pos, idx[i + 2]);
+    ab.subVectors(b, a);
+    ac.subVectors(c, a);
+    nrm.crossVectors(ab, ac);
+    if (nrm.lengthSq() < 1e-12) continue;
+    nrm.normalize().negate(); // inward, for an outward-wound mesh
+    origin.copy(a).add(b).add(c).multiplyScalar(1 / 3).addScaledVector(nrm, 0.02);
+    ray.set(origin, nrm);
+    for (const h of ray.intersectObject(mesh, false)) {
+      if (h.distance > 0.05) {
+        thicknesses.push(h.distance + 0.02);
+        break;
+      }
+    }
+  }
+  if (thicknesses.length < 8) return Infinity;
+  thicknesses.sort((x, y) => x - y);
+  return thicknesses[Math.floor(thicknesses.length * 0.03)]; // 3rd-percentile wall
+}
+
 export function analyzePrintability(
   geo: THREE.BufferGeometry,
   p: HubParams,
-  dirs: THREE.Vector3[] = []
+  dirs: THREE.Vector3[] = [],
+  opts: { measureWall?: boolean } = {}
 ): PrintabilityReport {
   const pos = geo.getAttribute('position') as THREE.BufferAttribute;
   const idx = triangleIndices(geo);
@@ -100,7 +151,9 @@ export function analyzePrintability(
   const paramWall = Math.min(p.wall, tipWall);
   const fit = dirs.length ? analyzeFitChecks(geo, dirs, p) : null;
   const sampledMinWallMm = fit?.sampledMinWallMm ?? paramWall;
-  const minWallMm = Math.min(paramWall, sampledMinWallMm);
+  // Opt-in real measurement (inspector) — never reports thicker than the mesh.
+  const measuredWallMm = opts.measureWall ? measureMinWallMm(geo) : Infinity;
+  const minWallMm = Math.min(paramWall, sampledMinWallMm, measuredWallMm);
   const targetEdgeMm = targetTriangleLength(p);
   const overhangPct = totalAreaMm2 > 0 ? (overhangAreaMm2 / totalAreaMm2) * 100 : 0;
   const avgEdgeMm = edgeCount ? edgeSum / edgeCount : 0;

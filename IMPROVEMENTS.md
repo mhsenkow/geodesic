@@ -6,9 +6,9 @@
 
 ---
 
-## ✅ Progress — 39/100 Implemented So Far
+## ✅ Progress — 45/100 Implemented So Far
 
-Items marked **✅** below are done, tested, and verified. The whole test suite is green (**138 unit tests**, +21 new), `tsc` is clean, the production build succeeds, and the UI changes were confirmed in a live browser. Highlights of this pass:
+Items marked **✅** below are done, tested, and verified. The whole test suite is green (**140 unit tests**, +23 new), `tsc` is clean, the production build succeeds, and the UI changes were confirmed in a live browser. Highlights of this pass:
 
 **The strut accuracy fix (the headline) is complete and proven.** `computeStrutTypes` now returns a true **cut length** (chord − socket seating at both ends), an **insertion depth**, a **seat-bevel angle**, and the **hub pair** each strut joins. A shared `roundSocketGeometry`/`hubSocketInfo` is the single source of truth (`socket-fit.ts`, `socket-geometry.ts`) consumed by the mesh builder, the fit checks, and the cut math alike. Ground-truth tests (`tests/unit/strut-accuracy.test.ts`) assert the V2 icosa chord-factor ratio (~0.884), Euler's V−E+F=2, hub angles (60°/90°), and that cut length = chord − both insets.
 
@@ -18,8 +18,12 @@ Items marked **✅** below are done, tested, and verified. The whole test suite 
 - **§5 Safety:** #53 span/strength warning · #54 structure weight estimate.
 - **§6 UX:** #63 fixed the 404'd Print Guide link · #64 strut-length color legend · #67 confirm-before-reset · #70 implemented the orphaned auto-open-inspector control.
 - **§9 Health:** #87 typecheck now gates CI (+ Playwright cache) · #91 open-mesh detection test · #92 STL-bytes round-trip test · #96 legacy fallback test.
+- **§2 Correctness:** #17 pinched-metaball-strut detection (falls back to the node-hub union, so a hub can't silently ship missing an arm) · #18 real mesh wall-thickness measurement (inward-normal raycast, robust 3rd-percentile — catches smoothing/meet-angle thinning the parameter estimate misses) · #20 inside-out (inverted-winding) detection via signed volume.
 - **§1/§2 Hub alignment:** #11 hub sockets now land on dome edges exactly · #25 bounded the n! permutation search.
-- **§1 Timber roll:** #12 rectangular sockets + strut bodies now share the dome-radial roll reference, so the lumber's wide face registers square (no twist) and survives prototype rotation. Plus **craft/popsicle sticks** added to the catalog (popsicle, jumbo craft, paint stirrer) with a Popsicle Stick Dome preset — yes, timber scales all the way down to model sticks.
+- **§1 Timber roll:** #12 rectangular sockets + strut bodies now share the **per-edge midpoint-radial** roll reference (both endpoint hubs + the beam derive the identical vector) so a rotated connector seats a standard beam flush at **both** ends — pinned by a beams-match regression test. Plus **craft/popsicle sticks** added to the catalog (popsicle, jumbo craft, paint stirrer) with a Popsicle Stick Dome preset — timber scales all the way down to model sticks.
+- **§4 Build layer (turn files → a dome):** #41 `ASSEMBLY.md` generator (hub inventory, cut list, **ring-by-ring build order**, fasteners) · #46 cross-referenced labels (embossed hub IDs + numbered sockets ↔ the guide ↔ `vertices.csv`) · #49 `cover_panels.csv` (faces grouped by congruent shape, edge lengths + fold/dihedral angles for skinning).
+
+**New capability — collective connector orientation ("rotate the connectors, see the totality, beams still match").** Built on the per-edge roll: a **Lumber Face** control (Flat ↔ On-edge) collectively rotates every timber socket's wide-face orientation and the whole dome re-renders live. Because sockets and beams share the identical per-edge `edgeRollUp` reference (symmetric in its endpoints at every angle — pinned by a test), one printed connector + standard beams stay flush at both ends in either orientation. Flat seats skin panels along the surface; on-edge gives radial stiffness. Verified in-browser (Flat vs On-edge, beams seated in both).
 
 **Bug fix — dome hub alignment (sockets twisting off the struts).** `alignmentQuat` paired struts to prototype sockets *without knowing the rotation*, so a symmetry-rotated hub matched the wrong sockets — a *pristine* full icosphere had **24/42 hubs 30°+ misaligned** (they limped along via slow per-vertex rebuilds). Rewrote it to score every strut correspondence by a cheap frame fit, keep the best, then polish to the least-squares optimum, and capped the exhaustive search at valence ≤6 (high-valence hubs no longer trigger the 9!≈363k blow-up that hung V3 timber builds). A headless probe now reports **0.00° residual on every hub** of geodesic/Goldberg/hemisphere/full-sphere/flat-base domes; a regression test pins it. Verified in-browser on the full-sphere buckyball.
 
@@ -123,13 +127,13 @@ Section 1 below is the cure. Everything else builds the wonderful thing on top o
 
 *The hubs are the crown jewels. Make them bulletproof and even more gorgeous.*
 
-**17. 🎯 Detect dropped/pinched struts after metaball `levelSet`.** The metaball SDF (`metaball-hub.ts:166`) is not a true distance field; the author's own comment (`:125`) warns `levelSet` can "pinch a strut off into a second component." Nothing catches it — `validateStlGeometry` only checks open edges, so a hub *missing an arm* exports perfectly watertight. Add a `Manifold.decompose().length === 1` check (already used in tests!) post-levelSet, then refine-and-retry or fall back to the node-union path. This is a ship-to-printer correctness hole.
+**17. ✅ 🎯 Detect dropped/pinched struts after metaball `levelSet`.** The metaball SDF (`metaball-hub.ts:166`) is not a true distance field; the author's own comment (`:125`) warns `levelSet` can "pinch a strut off into a second component." Nothing catches it — `validateStlGeometry` only checks open edges, so a hub *missing an arm* exports perfectly watertight. Add a `Manifold.decompose().length === 1` check (already used in tests!) post-levelSet, then refine-and-retry or fall back to the node-union path. This is a ship-to-printer correctness hole.
 
-**18. Measure *real* mesh wall thickness instead of estimating it.** `fit-checks.ts:31` and `printability.ts:99` derive min-wall from `wall × (meetAngle/90)` — pure parameter math, never touching the actual mesh. But `smoothOut` and tight strut meets genuinely thin walls (especially the `tipWall = wall*0.45` arms). Add a sampled ray/SDF thickness probe near each socket and feed it into the existing warning.
+**18. ✅ Measure *real* mesh wall thickness instead of estimating it.** `fit-checks.ts:31` and `printability.ts:99` derive min-wall from `wall × (meetAngle/90)` — pure parameter math, never touching the actual mesh. But `smoothOut` and tight strut meets genuinely thin walls (especially the `tipWall = wall*0.45` arms). Add a sampled ray/SDF thickness probe near each socket and feed it into the existing warning.
 
 **19. 🎯 Make "hybrid" actually hybrid (or rename it).** `effectiveHubStyle` (`smooth-curves.ts:18`) never returns `'hybrid'`, has a dead `blend > 0.5` branch shadowed by `> 0.92`, and turns the documented "0–1 blend" into a discrete switch. Today "hybrid" = "metaball + 5 % smoothing." Either implement a real morph between organic and metaball solids, or be honest and rename the control.
 
-**20. Validate normals/winding and report degenerate triangles.** `stl-validation.ts` checks only open edges — a fully inside-out mesh passes, and zero-area triangles are silently skipped (`:45`). Add a signed-volume sign check (cheap) and a degenerate-tri count, especially since the legacy fallback and merged foot/decoration paths bypass Manifold's guarantees.
+**20. ✅ Validate normals/winding and report degenerate triangles.** `stl-validation.ts` checks only open edges — a fully inside-out mesh passes, and zero-area triangles are silently skipped (`:45`). Add a signed-volume sign check (cheap) and a degenerate-tri count, especially since the legacy fallback and merged foot/decoration paths bypass Manifold's guarantees.
 
 **21. Make the printed hub physically sound at its weak points.** Two linked fixes. First, route the preview print-foot through the real Manifold union (`unionPrintBase`, `timber-print-base.ts:38`) instead of `mergeGeometries(..., false)` (`hub-foot.ts:84`), which today renders interpenetrating triangle soup in the dome preview rather than a watertight join. Second, add a controllable fillet where each strut arm meets the node — the highest-stress point and the #1 real-world snap-off location — to dramatically improve layer-adhesion strength.
 
@@ -183,7 +187,7 @@ Section 1 below is the cure. Everything else builds the wonderful thing on top o
 
 *This is the biggest missing half of the product. The app stops at "here are your files." A real builder needs "here's how to turn these into a dome."*
 
-**41. 🎯 Generate a real Assembly Guide.** Today the only assembly doc is a 5-line README inside the ZIP (`export.ts:84`). Produce a proper guide (HTML/PDF) that states, per dome: struts by length *with the explicit definition of how length is measured*, hub counts by type and *where each sits* (base ring vs. body — already known via `dome.isBase`/`isDoor`), and a ring-by-ring assembly order. This is the bridge from "files" to "dome."
+**41. ✅ 🎯 Generate a real Assembly Guide.** Today the only assembly doc is a 5-line README inside the ZIP (`export.ts:84`). Produce a proper guide (HTML/PDF) that states, per dome: struts by length *with the explicit definition of how length is measured*, hub counts by type and *where each sits* (base ring vs. body — already known via `dome.isBase`/`isDoor`), and a ring-by-ring assembly order. This is the bridge from "files" to "dome."
 
 **42. ✅ 🎯 Fill in the strut→hub adjacency that's already stubbed.** `strutTableCsv` defines `hub_a,hub_b` columns and emits them **empty** (`math.ts:318`). Every edge knows its two endpoints; every vertex maps to a hub type. Filling these turns "cut these lengths" into "cut these lengths, each joins hub H3 to H5" — pure data you already have.
 
@@ -193,13 +197,13 @@ Section 1 below is the cure. Everything else builds the wonderful thing on top o
 
 **45. ✅ Count the fasteners and consumables.** The connectors use screws (`screwHoles`, `screwDia`) but the BOM lists zero screws, zero glue, zero couplers. Compute and include them — a build stalls fast when you're three screws short.
 
-**46. Number and label every hub and strut for assembly.** Emboss `H3-A` style IDs on hubs (the emboss path exists — `hub-decorations.ts`) and print matching strut tags. Cross-reference them in the assembly guide and the hub-map SVG. Geodesic domes are a sea of near-identical parts; labels are everything.
+**46. ✅ Number and label every hub and strut for assembly.** Emboss `H3-A` style IDs on hubs (the emboss path exists — `hub-decorations.ts`) and print matching strut tags. Cross-reference them in the assembly guide and the hub-map SVG. Geodesic domes are a sea of near-identical parts; labels are everything.
 
 **47. Generate per-hub "socket maps."** For each hub, a little diagram: which socket points where, which strut length goes in it, what angle. Eliminates the "which arm is which?" confusion that wrecks first builds.
 
 **48. Add an interactive 3D assembly sequencer.** Step through the build in the 3D view — ring 0, then ring 1, highlighting which struts and hubs go in next. Doubles as the on-screen version of the printed guide (and see item 83).
 
-**49. Output the cover/skin panel geometry.** A dome isn't done until it's covered. Generate the triangular face panels (flat-pattern with seam allowance) for polycarbonate, plywood, canvas, or shrink-wrap, including the panel cut angles. This needs item 5's angle math.
+**49. ✅ Output the cover/skin panel geometry.** A dome isn't done until it's covered. Generate the triangular face panels (flat-pattern with seam allowance) for polycarbonate, plywood, canvas, or shrink-wrap, including the panel cut angles. This needs item 5's angle math.
 
 **50. Estimate total build time and crew.** "≈ 18 hub-hours to print, ≈ 40 struts to cut, ≈ 4 person-hours to assemble, 2 people recommended." Sets expectations and makes the project feel real and plannable.
 

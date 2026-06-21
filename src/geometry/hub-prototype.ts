@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { DomeData, HubParams, HubType } from '../types';
 import { alignmentQuat } from './hub-orient';
-import { createHubFromDirs, hubDirsFromVertex } from './hub-geometry';
+import { createHubFromDirs, hubDirsFromVertex, socketRollUpsForVertex } from './hub-geometry';
 
 import { hubParamsFingerprint, hubTypeFingerprint } from '../utils/cache-key';
 
@@ -33,21 +33,22 @@ export function noteHubParamsFingerprint(p: HubParams): void {
   lastParamsFingerprint = fp;
 }
 
-export function getHubPrototype(ht: HubType, p: HubParams): THREE.BufferGeometry {
+export function getHubPrototype(ht: HubType, p: HubParams, dome: DomeData): THREE.BufferGeometry {
   const key = hubTypeKey(ht, p);
   let proto = protoCache.get(key);
   if (!proto) {
     const dirs = ht.dirs.map((d) => new THREE.Vector3(d[0], d[1], d[2]));
-    // Roll the prototype's sockets relative to its own outward radial; the
+    // Roll the prototype's sockets relative to per-edge midpoint radials; the
     // instance rotation that maps it onto each symmetry-related vertex carries
-    // that roll with it, so rectangular sockets stay aligned with the struts.
+    // those rolls with it, so a beam seats flush at both ends everywhere.
     const vlen = Math.hypot(ht.vPos[0], ht.vPos[1], ht.vPos[2]) || 1;
     const rollRefUp: [number, number, number] = [
       ht.vPos[0] / vlen,
       ht.vPos[1] / vlen,
       ht.vPos[2] / vlen,
     ];
-    const built = createHubFromDirs(dirs, { ...p, rollRefUp });
+    const socketRollUps = socketRollUpsForVertex(dome, ht.verts[0], p.socketRollDeg ?? 0);
+    const built = createHubFromDirs(dirs, { ...p, rollRefUp, socketRollUps });
     if (!built) throw new Error('Failed to build hub prototype');
     proto = built;
     protoCache.set(key, proto);
@@ -168,7 +169,8 @@ export function buildHubInstance(
       const v = dome.verts[vi];
       const vlen = Math.hypot(v[0], v[1], v[2]) || 1;
       const rollRefUp: [number, number, number] = [v[0] / vlen, v[1] / vlen, v[2] / vlen];
-      const built = createHubFromDirs(actual, { ...p, rollRefUp });
+      const socketRollUps = socketRollUpsForVertex(dome, vi, p.socketRollDeg ?? 0);
+      const built = createHubFromDirs(actual, { ...p, rollRefUp, socketRollUps });
       if (!built) return null;
       instanceCache.set(key, built);
       base = built;
@@ -178,7 +180,7 @@ export function buildHubInstance(
     return geo;
   }
 
-  const proto = getHubPrototype(ht, p);
+  const proto = getHubPrototype(ht, p, dome);
   const geo = proto.clone();
   geo.applyMatrix4(align.matrix);
   if (align.reflected) reverseWinding(geo);

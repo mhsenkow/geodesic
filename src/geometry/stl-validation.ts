@@ -35,6 +35,8 @@ export function validateStlGeometry(positions: Float32Array): StlValidationResul
   const q = (v: number) => Math.round(v / grid);
   const key = (i: number) => `${q(positions[i])},${q(positions[i + 1])},${q(positions[i + 2])}`;
 
+  let signedVol6 = 0; // 6× signed volume — its sign reveals winding/orientation
+
   const edgeCount = new Map<string, number>();
   for (let t = 0; t < triangleCount; t++) {
     const base = t * 9;
@@ -46,6 +48,12 @@ export function validateStlGeometry(positions: Float32Array): StlValidationResul
       const ek = a < b ? `${a}|${b}` : `${b}|${a}`;
       edgeCount.set(ek, (edgeCount.get(ek) ?? 0) + 1);
     }
+
+    // Orientation from raw coords: a · (b × c) summed over triangles.
+    const ax = positions[base], ay = positions[base + 1], az = positions[base + 2];
+    const bx = positions[base + 3], by = positions[base + 4], bz = positions[base + 5];
+    const cx = positions[base + 6], cy = positions[base + 7], cz = positions[base + 8];
+    signedVol6 += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx);
   }
 
   // Open boundary edges (shared by a single triangle) are the reliable,
@@ -61,6 +69,14 @@ export function validateStlGeometry(positions: Float32Array): StlValidationResul
 
   if (openEdges > 0) {
     warnings.push(`${openEdges} open boundary edge(s) — mesh may not be watertight.`);
+  }
+
+  // A correctly-oriented closed mesh (CCW, outward normals) has positive signed
+  // volume; negative means the surface is inside-out — a real defect the
+  // open-edge check can't see. (Tiny CSG slivers are left unflagged: they're
+  // normal in level-set/boolean output and harmless to slicers.)
+  if (triangleCount >= 4 && openEdges === 0 && signedVol6 < 0) {
+    warnings.push('Mesh appears inside-out (inverted winding/normals).');
   }
 
   return {

@@ -146,6 +146,8 @@ export interface AppSettings {
   embossPreview: boolean;
   autoOpenInspector: boolean;
   nozzlePreset: NozzlePreset;
+  /** Timber lumber-face orientation (deg): 0 = flat to dome surface, 90 = on-edge. */
+  socketRollDeg: number;
 }
 
 export interface HubParams {
@@ -204,6 +206,13 @@ export interface HubParams {
    *  reference so rectangular timber sockets orient their wide face
    *  consistently (and survive prototype rotation). */
   rollRefUp?: [number, number, number];
+  /** Per-socket roll reference (aligned with the strut dirs): the edge-midpoint
+   *  radial. Both endpoint hubs and the beam derive the identical vector, so a
+   *  rotated connector seats a standard-length beam flush at BOTH ends. */
+  socketRollUps?: [number, number, number][];
+  /** Timber lumber-face orientation: 0° = wide face flat to the dome surface,
+   *  90° = on-edge (face standing radial). Applied to sockets + beams alike. */
+  socketRollDeg?: number;
   treeSupportBase?: boolean;
   previewQuality?: PreviewQuality;
 }
@@ -298,6 +307,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   embossPreview: false,
   autoOpenInspector: false,
   nozzlePreset: '0.4',
+  socketRollDeg: 0,
 };
 
 export const DOME_RADIUS = 5;

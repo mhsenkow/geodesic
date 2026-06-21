@@ -8,6 +8,7 @@ import { isManifoldReady } from './manifold-init';
 import { designJsonMeta } from '../storage/settings-schema';
 import { strutTableCsv } from '../geodesic/math';
 import { planCuts } from '../guides/material';
+import { assemblyGuide, coverPanelsCsv } from '../guides/build-docs';
 import { getMaterialProfile } from '../materials/catalog';
 import { csvRow } from '../utils/csv';
 import { zipStore } from './zip';
@@ -310,8 +311,10 @@ export async function exportAllHubsZip(
       data: strutTableCsv(struts, options.materialLabel ?? 'stock', dome, hubTypes),
     });
     files.push({ path: 'tables/cut_sheet.csv', data: cutSheetCsv(struts, settings) });
+    files.push({ path: 'ASSEMBLY.md', data: assemblyGuide(settings, hubTypes, struts, dome, options.bomEstimate?.sticksNeeded) });
   }
   files.push({ path: 'tables/vertices.csv', data: vertexCoordsCsv(dome, hubTypes) });
+  files.push({ path: 'tables/cover_panels.csv', data: coverPanelsCsv(dome, settings.diam) });
   if (options.bomEstimate) {
     files.push({ path: 'tables/bom.csv', data: bomCsv(settings, hubTypes, struts, options.bomEstimate) });
   }

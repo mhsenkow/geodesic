@@ -124,6 +124,7 @@ export class GeodesicApp {
       alignmentNotches: this.settings.alignmentNotches,
       showOverhangHeatmap: this.settings.showOverhangHeatmap,
       lumberDepthAxis: profile?.lumberDepthAxis,
+      socketRollDeg: this.settings.socketRollDeg,
       junctionDrip: this.settings.junctionDrip,
       surfaceNoise: this.settings.surfaceNoise,
       hubStyleBlend: this.settings.hubStyleBlend,
@@ -302,7 +303,7 @@ export class GeodesicApp {
       const validation = validateStlGeometry(nonIndexed.attributes.position.array as Float32Array);
       if (nonIndexed !== geo) nonIndexed.dispose();
       const dirs = hubDirsFromVertex(this.dome, ht.verts[0]).map((d) => d.clone());
-      const report = analyzePrintability(geo, this.hubParams(), dirs);
+      const report = analyzePrintability(geo, this.hubParams(), dirs, { measureWall: true });
       const fit = analyzeFitChecks(geo, dirs, this.hubParams());
       const plate = estimatePlatePack(this.hubTypes, this.settings.buildPlateW, this.settings.buildPlateD, 45);
       addBadge(validation.errors.length ? 'error' : validation.warnings.length ? 'warn' : 'ok', 'Watertight', [
@@ -635,6 +636,7 @@ export class GeodesicApp {
     setVal('flat-base', s.flatBot);
     setVal('preview-quality', s.previewQuality);
     setVal('nozzle-preset', s.nozzlePreset);
+    setVal('lumber-face', String(s.socketRollDeg));
     setVal('filament-diameter', s.filamentDiameterMm);
     setVal('tree-support-base', s.treeSupportBase);
     setVal('emboss-preview', s.embossPreview);

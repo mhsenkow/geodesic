@@ -113,6 +113,20 @@ function timberRollUp(p: HubParams): THREE.Vector3 {
   return WORLD_UP;
 }
 
+/** Per-socket roll reference (edge-midpoint radial) so a beam seats flush at
+ *  both ends; falls back to the hub radial, then world-up. */
+function socketUps(p: HubParams, dirs: THREE.Vector3[]): THREE.Vector3[] {
+  const fallback = timberRollUp(p);
+  return dirs.map((_, i) => {
+    const r = p.socketRollUps?.[i];
+    if (r) {
+      const v = new THREE.Vector3(r[0], r[1], r[2]);
+      if (v.lengthSq() > 1e-9) return v.normalize();
+    }
+    return fallback;
+  });
+}
+
 function nodeSphereSegments(p: HubParams): number {
   return Math.max(28, Math.round((p.detail || 48) / 1.5));
 }
@@ -257,7 +271,7 @@ function subtractTimberScrewHoles(
   dirs: THREE.Vector3[],
   d: TimberDims,
   p: HubParams,
-  up: THREE.Vector3 = WORLD_UP
+  ups: THREE.Vector3[] = []
 ): Manifold {
   const Manifold = getManifold();
   const r = Math.max(1.6, (p.screwDia ?? 4.2) / 2);
@@ -265,8 +279,9 @@ function subtractTimberScrewHoles(
   const along = [d.socketLen * 0.42, d.socketLen * 0.66];
   const holes: Manifold[] = [];
 
-  for (const dir of dirs) {
-    const frame = frameForStrutAxisZ(dir, up);
+  for (let di = 0; di < dirs.length; di++) {
+    const dir = dirs[di];
+    const frame = frameForStrutAxisZ(dir, ups[di] ?? WORLD_UP);
     const lx = new THREE.Vector3();
     const ly = new THREE.Vector3();
     const lz = new THREE.Vector3();
@@ -294,14 +309,14 @@ export function buildTimberNodeHubSolid(
   const feature = Math.max(d.outerW, d.outerH) * 0.5;
   // Timber keeps flat socket faces unless smoothing is pushed high.
   const baseSharpAngle = 52;
-  // Roll every socket of this hub against a shared reference so the lumber's
-  // wide face is consistent — otherwise a rotated prototype's rectangular
-  // sockets land twisted relative to the (world-up) strut bodies.
-  const hubUp = timberRollUp(p);
+  // Roll each socket against its edge-midpoint radial so the lumber's wide
+  // face is consistent and a beam seats flush at both ends (the neighbouring
+  // hub derives the identical reference for the shared edge).
+  const ups = socketUps(p, dirs);
 
   const outerTemplate = rectPrismAlongZ(d.outerW, d.outerH, d.socketLen);
   const outers: Manifold[] = dirs.length
-    ? dirs.map((dir) => alignZ(outerTemplate, dir, hubUp))
+    ? dirs.map((dir, i) => alignZ(outerTemplate, dir, ups[i]))
     : [outerTemplate];
 
   const coreR = timberCoreRadius(d, p) * (p.junctionMeet ?? 1);
@@ -313,7 +328,7 @@ export function buildTimberNodeHubSolid(
   const boreLen = Math.max(d.socketLen - inset + d.wall, d.innerH * 0.6);
   const voidTemplate = rectPrismAlongZ(d.innerW, d.innerH, boreLen).translate(0, 0, inset);
   if (dirs.length) {
-    const voids = dirs.map((dir) => alignZ(voidTemplate, dir, hubUp));
+    const voids = dirs.map((dir, i) => alignZ(voidTemplate, dir, ups[i]));
     solid = Manifold.difference(solid, Manifold.union(voids));
   } else {
     solid = Manifold.difference(solid, voidTemplate);
@@ -330,17 +345,17 @@ export function buildTimberNodeHubSolid(
     const bevelTpl = CrossSection.square([d.innerW, d.innerH], true)
       .extrude(ch + EPS, 1, 0, scaleTop, false)
       .translate(0, 0, d.socketLen - ch);
-    const bevels = dirs.map((dir) => alignZ(bevelTpl, dir, hubUp));
+    const bevels = dirs.map((dir, i) => alignZ(bevelTpl, dir, ups[i]));
     solid = Manifold.difference(solid, Manifold.union(bevels));
   }
 
   if (dirs.length) {
-    solid = addTimberFrictionRibs(solid, dirs, d, p, inset, hubUp);
-    solid = addTimberScrewBosses(solid, dirs, d, p, hubUp);
+    solid = addTimberFrictionRibs(solid, dirs, d, p, inset, ups);
+    solid = addTimberScrewBosses(solid, dirs, d, p, ups);
   }
 
   if (p.screwHoles && dirs.length) {
-    solid = subtractTimberScrewHoles(solid, dirs, d, p, hubUp);
+    solid = subtractTimberScrewHoles(solid, dirs, d, p, ups);
   }
   return solid;
 }

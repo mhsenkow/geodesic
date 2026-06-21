@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.11.0] - 2026-06-20
+
+### Added
+
+- **ASSEMBLY.md** export — hub inventory, cut list, ring-by-ring build order, and fastener tally cross-referenced to embossed labels and numbered sockets.
+- **cover_panels.csv** — congruent face groups with edge lengths and fold/dihedral angles for skinning.
+- **Lumber Face** control (Flat ↔ On-edge) — collective timber socket rotation with live dome preview; beams stay flush at both ends.
+- **Per-edge roll reference** (`edgeRollUp`) shared by hubs and strut bodies so rotated connectors seat standard beams correctly.
+- **Mesh printability checks** — inward-ray wall thickness, pinched-metaball-strut fallback, and inside-out winding detection.
+
+### Fixed
+
+- Timber socket orientation now uses midpoint-radial roll at each edge instead of vertex-only radial.
+
 ## [1.10.0] - 2026-06-18
 
 ### Added

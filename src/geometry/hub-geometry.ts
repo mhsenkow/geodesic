@@ -247,7 +247,11 @@ export function createHub(
   d: DomeData,
   p: HubParams
 ): THREE.BufferGeometry | null {
-  return createHubFromDirs(hubDirsFromVertex(d, vidx), { ...p, rollRefUp: outwardRadial(d, vidx) });
+  return createHubFromDirs(hubDirsFromVertex(d, vidx), {
+    ...p,
+    rollRefUp: outwardRadial(d, vidx),
+    socketRollUps: socketRollUpsForVertex(d, vidx, p.socketRollDeg ?? 0),
+  });
 }
 
 /** Dome center → vertex direction; the roll reference for rectangular sockets. */
@@ -255,6 +259,49 @@ export function outwardRadial(d: DomeData, vidx: number): [number, number, numbe
   const v = d.verts[vidx];
   const len = Math.hypot(v[0], v[1], v[2]) || 1;
   return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+/**
+ * Roll reference for one edge (va→vb): the outward radial at the strut
+ * MIDPOINT, optionally twisted by `twistDeg` about the edge toward the
+ * "on-edge" orientation. Both endpoint hubs and the beam call this with the
+ * same edge and get the identical vector, so a beam seats flush at both ends.
+ * The perp sign is stabilised so the two ends agree at any angle.
+ */
+export function edgeRollUp(va: number[], vb: number[], twistDeg = 0): [number, number, number] {
+  const mx = (va[0] + vb[0]) / 2;
+  const my = (va[1] + vb[1]) / 2;
+  const mz = (va[2] + vb[2]) / 2;
+  const rl = Math.hypot(mx, my, mz) || 1;
+  let ux = mx / rl, uy = my / rl, uz = mz / rl; // midpoint radial (face flat to dome)
+  const tw = (twistDeg * Math.PI) / 180;
+  if (Math.abs(tw) > 1e-6) {
+    let ax = vb[0] - va[0], ay = vb[1] - va[1], az = vb[2] - va[2];
+    const al = Math.hypot(ax, ay, az) || 1;
+    ax /= al; ay /= al; az /= al;
+    // perp = edge × radial, in the cross-section plane
+    let px = ay * uz - az * uy;
+    let py = az * ux - ax * uz;
+    let pz = ax * uy - ay * ux;
+    const pl = Math.hypot(px, py, pz) || 1;
+    px /= pl; py /= pl; pz /= pl;
+    // Stabilise sign (both ends + the beam converge to the same perp).
+    if (py < -1e-9 || (Math.abs(py) < 1e-9 && px < -1e-9) || (Math.abs(py) < 1e-9 && Math.abs(px) < 1e-9 && pz < 0)) {
+      px = -px; py = -py; pz = -pz;
+    }
+    const c = Math.cos(tw), s = Math.sin(tw);
+    ux = ux * c + px * s; uy = uy * c + py * s; uz = uz * c + pz * s;
+  }
+  return [ux, uy, uz];
+}
+
+/** Per-socket roll references in hubDirsFromVertex order (see edgeRollUp). */
+export function socketRollUpsForVertex(
+  d: DomeData,
+  vidx: number,
+  twistDeg = 0
+): [number, number, number][] {
+  return d.adj[vidx].map((j) => edgeRollUp(d.verts[vidx], d.verts[j], twistDeg));
 }
 
 export function createBuildGuide(geo: THREE.BufferGeometry, p: HubParams): THREE.Group {

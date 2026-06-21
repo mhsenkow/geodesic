@@ -181,7 +181,7 @@ export function addTimberFrictionRibs(
   d: TimberFitDims,
   p: HubParams,
   voidInset: number,
-  up: THREE.Vector3 = WORLD_UP
+  ups: THREE.Vector3[] = []
 ): Manifold {
   if (!p.frictionRibs || !dirs.length) return hub;
   const Manifold = getManifold();
@@ -200,8 +200,9 @@ export function addTimberFrictionRibs(
   );
   const zAt = ribPositions(count, voidInset, d.socketLen - width * 0.5);
   const ribs: Manifold[] = [];
-  for (const dir of dirs) {
-    for (const z of zAt) ribs.push(alignZ(rib.translate(0, 0, z), dir, up));
+  for (let di = 0; di < dirs.length; di++) {
+    const up = ups[di] ?? WORLD_UP;
+    for (const z of zAt) ribs.push(alignZ(rib.translate(0, 0, z), dirs[di], up));
   }
   return ribs.length ? Manifold.union([hub, Manifold.union(ribs)]) : hub;
 }
@@ -242,7 +243,7 @@ export function addTimberScrewBosses(
   dirs: THREE.Vector3[],
   d: TimberFitDims,
   p: HubParams,
-  up: THREE.Vector3 = WORLD_UP
+  ups: THREE.Vector3[] = []
 ): Manifold {
   if (!p.screwHoles || !p.screwBosses || !dirs.length) return hub;
   const Manifold = getManifold();
@@ -252,7 +253,9 @@ export function addTimberScrewBosses(
   const along = [d.socketLen * 0.42, d.socketLen * 0.66];
   const bosses: Manifold[] = [];
 
-  for (const dir of dirs) {
+  for (let di = 0; di < dirs.length; di++) {
+    const dir = dirs[di];
+    const up = ups[di] ?? WORLD_UP;
     const frame = frameForStrutAxisZ(dir, up);
     const lx = new THREE.Vector3();
     frame.extractBasis(lx, new THREE.Vector3(), new THREE.Vector3());

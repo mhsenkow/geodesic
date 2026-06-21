@@ -68,6 +68,13 @@ export function bindUi(app: GeodesicApp): void {
     })
   );
 
+  document.getElementById('lumber-face')?.addEventListener('change', (e) => {
+    app.settings.socketRollDeg = parseFloat((e.target as HTMLSelectElement).value) || 0;
+    app.updateInspector();
+    void app.buildDome(false);
+    app.persist();
+  });
+
   document.getElementById('screw-holes')?.addEventListener('change', (e) => {
     app.settings.screwHoles = (e.target as HTMLInputElement).checked;
     app.updateInspector();

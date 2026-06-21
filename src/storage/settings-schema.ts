@@ -47,6 +47,7 @@ function migrateSettings(raw: Partial<AppSettings> & { schemaVersion?: number })
   migrated.baseThickness = Math.max(2.5, Math.min(12, migrated.baseThickness));
   migrated.baseScale = Math.max(1, Math.min(2, migrated.baseScale));
   migrated.footMargin = Math.max(0, Math.min(20, migrated.footMargin));
+  migrated.socketRollDeg = Math.max(0, Math.min(90, migrated.socketRollDeg ?? 0));
   return migrated;
 }
 

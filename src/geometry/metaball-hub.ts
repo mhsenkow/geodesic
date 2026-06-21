@@ -6,6 +6,7 @@ import { getManifold } from './manifold-init';
 import { frameForStrutAxisZ, WORLD_UP } from './hub-orient';
 import { transformManifold } from './manifold-mesh';
 import { finishManifoldHub } from './timber-finish';
+import { createRoundNodeHub, createTimberNodeHub } from './node-hub-manifold';
 import { timberDims, type TimberDims } from './timber-socket';
 import { timberVoidInset } from './timber-junction';
 import {
@@ -290,6 +291,21 @@ export function buildMetaballHubSolid(
 export function createMetaballHub(dirs: THREE.Vector3[], p: HubParams): THREE.BufferGeometry {
   const opts: MetaballOptions = { preview: p.domePreview && !p.printFrame };
   const solid = buildMetaballHubSolid(dirs, p, opts);
+
+  // The metaball SDF is not a true distance field, so a coarse level-set grid
+  // can pinch a thin strut off into a second component — a hub that exports
+  // watertight but is silently missing an arm. Detect that and fall back to
+  // the crisp node-hub union, which is always one connected solid.
+  if (dirs.length > 1) {
+    const parts = solid.decompose();
+    const fragmented = parts.length > 1;
+    parts.forEach((pt) => pt.delete());
+    if (fragmented) {
+      solid.delete();
+      return p.matType === 'round' ? createRoundNodeHub(dirs, p) : createTimberNodeHub(dirs, p);
+    }
+  }
+
   const geo = finishManifoldHub(solid, dirs, p, { matType: p.matType, skipSmooth: true });
   geo.userData.metaball = true;
   return geo;

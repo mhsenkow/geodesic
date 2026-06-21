@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { genSphere, truncDome, classHubs, dualizeSphere } from '../../src/geodesic/math';
-import { hubDirsFromVertex } from '../../src/geometry/hub-geometry';
+import { hubDirsFromVertex, socketRollUpsForVertex, edgeRollUp } from '../../src/geometry/hub-geometry';
 import { alignmentQuat } from '../../src/geometry/hub-orient';
 import {
   bestAlignment,
@@ -72,6 +72,41 @@ describe('dome hub preview alignment', () => {
         }
       }
       expect(worst, `${label} worst residual`).toBeLessThan(0.5);
+    }
+  });
+
+  it('both hubs of an edge share the identical per-edge roll reference (beams match)', () => {
+    // A single beam must seat flush at both ends regardless of how each
+    // connector is rotated — so both endpoint hubs must roll that socket
+    // against the same reference: the edge-midpoint radial.
+    for (const freq of [2, 3]) {
+      const { dome } = domeHubs(freq);
+      for (const [a, b] of dome.edges) {
+        const ra = socketRollUpsForVertex(dome, a)[dome.adj[a].indexOf(b)];
+        const rb = socketRollUpsForVertex(dome, b)[dome.adj[b].indexOf(a)];
+        for (let k = 0; k < 3; k++) expect(ra[k]).toBeCloseTo(rb[k], 9);
+        // …and it is the edge-midpoint radial.
+        const m = [
+          (dome.verts[a][0] + dome.verts[b][0]) / 2,
+          (dome.verts[a][1] + dome.verts[b][1]) / 2,
+          (dome.verts[a][2] + dome.verts[b][2]) / 2,
+        ];
+        const L = Math.hypot(m[0], m[1], m[2]) || 1;
+        for (let k = 0; k < 3; k++) expect(ra[k]).toBeCloseTo(m[k] / L, 9);
+      }
+    }
+  });
+
+  it('lumber-face twist keeps both ends matched at every angle', () => {
+    // edgeRollUp must be symmetric in its endpoints for any twist, so a
+    // collectively-rotated connector still seats one beam flush at both ends.
+    const { dome } = domeHubs(3);
+    for (const deg of [0, 30, 45, 90]) {
+      for (const [a, b] of dome.edges) {
+        const ra = edgeRollUp(dome.verts[a], dome.verts[b], deg);
+        const rb = edgeRollUp(dome.verts[b], dome.verts[a], deg);
+        for (let k = 0; k < 3; k++) expect(ra[k]).toBeCloseTo(rb[k], 9);
+      }
     }
   });
 
